@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spellbound Portal Tunnel</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand"><h1>Portal Tunnel</h1><span>Spellbound · brush portal system</span></div>
+    <div class="acts">
+      <button class="btn" id="bPlay" type="button">Pause</button>
+      <button class="btn" id="bPng" type="button">Export PNG</button>
+      <button class="btn" id="bMp4" type="button">Record MP4</button>
+      <button class="btn" id="bJson" type="button">Copy rules JSON</button>
+    </div>
+  </header>
+  <div class="main">
+    <div id="stage"></div>
+    <div class="bar">
+      <label>Frame <select id="fmt">
+        <option value="4:5">4:5 · brand asset (1600×2000)</option>
+        <option value="card">63:88 · trading card</option>
+        <option value="1:1">1:1 · post</option>
+        <option value="9:16">9:16 · story</option>
+      </select></label>
+      <span>seed <b id="seedOut">7</b></span>
+      <span>Click frame / O open portal · Space pause · H hide panel</span>
+    </div>
+    <div class="chips" id="presets"></div>
+    <div class="edrow"><span class="edlab">Edition</span><div class="editions" id="editions"></div></div>
+  </div>
+  <aside id="panel">
+    <div class="locks">
+      <label class="tog"><input type="checkbox" id="lockShape"> Lock skeleton + brush</label>
+      <label class="tog"><input type="checkbox" id="showAll"> Show all controls</label>
+    </div>
+  </aside>
+</div>
+<div class="modal" id="modal" hidden>
+  <div class="sheet">
+    <h2 id="mTitle">Export</h2>
+    <div id="mBody"></div>
+    <div class="row"><button class="btn primary" id="mSave" type="button" hidden>Download</button><button class="btn" id="mClose" type="button">Close</button></div>
+    <p class="hint" id="mHint"></p>
+  </div>
+</div>
+<div id="svgProbe" style="position:absolute;left:-9999px;top:0;width:400px;height:400px;overflow:hidden;visibility:hidden" aria-hidden="true"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/p5@1.11.9/lib/p5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.js"></script>
+<script src="shapes.js"></script>
+<script src="brush.js"></script>
+<script src="color.js"></script>
+<script src="util.js"></script>
+<script src="lightShader.js"></script>
+<script src="pattern.js"></script>
+<script src="recorder.js"></script>
+<script src="gui.js"></script>
+<script src="sketch.js"></script>
+</body>
+</html>
