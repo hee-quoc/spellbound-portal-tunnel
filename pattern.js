@@ -99,13 +99,14 @@ class Motif {
     // (deepest first). Moving through depth keeps perspective intact, so nothing jumps in size.
     const it = (P.introStart === null || P.introStart === undefined) ? 1e9 : t - P.introStart;
     const dur = Math.max(.05, P.introDur), spread = P.introStagger * dur, run = Math.max(.05, dur - spread);
-    const easeOut = x => 1 - Math.pow(1 - x, 3);
+    // overshoot past the resting place and bounce back (introBounce 0 = plain ease-out)
+    const easeOutBack = x => { const c1 = 1.70158 * P.introBounce, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
     return this.elements.map((el, i) => {
       let s = i * P.spacing + travel;
       s = ((s % total) + total) % total - total / 2 + P.spacing / 2;
       const depth01 = (s + total / 2) / total;                          // 0 = deepest … 1 = front
       const q = Math.min(1, Math.max(0, (it - spread * depth01) / run));
-      const push = (1 - easeOut(q)) * P.introDepth;                     // in layers
+      const push = (1 - easeOutBack(q)) * P.introDepth;                 // in layers (briefly < 0 = overshoots toward the camera)
       s -= push * P.spacing;
       let x = 0, y = 0, z = s;
       let near = (s + total / 2) / total, tw = null;
@@ -149,12 +150,11 @@ class Motif {
   intro(placed, P, t) {
     const n = placed.length, it = (P.introStart === null || P.introStart === undefined) ? 1e9 : t - P.introStart;
     const dur = Math.max(.05, P.introDur), spread = P.introStagger * dur;
-    const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
     const easeOutBack = x => { const c1 = 1.70158 * P.introBounce, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
     placed.forEach((p, k) => {                       // k: 0 = deepest
       const q = p.iq;                                // progress from place(): same stagger as the depth rush
       p.iscale = q >= 1 ? 1 : P.introScale + (1 - P.introScale) * easeOutBack(q);
-      p.irot = q >= 1 ? 0 : P.introSpin * TWO_PI * (1 - easeOutCubic(q)) * (k % 2 && P.introAlternate ? -1 : 1);
+      p.irot = q >= 1 ? 0 : P.introSpin * TWO_PI * (1 - easeOutBack(q)) * (k % 2 && P.introAlternate ? -1 : 1);
       // each layer stays hidden until its turn, then fades in fast while it is still deep (no ghost copies)
       p.ifade = Math.min(1, Math.max(0, it / Math.max(.01, P.introFade))) * Math.min(1, q * 5) * p.seam;
     });

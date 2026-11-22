@@ -91,7 +91,7 @@ const GUI = (() => {
       { k: 'introStagger', label: 'Ring stagger', min: 0, max: .95, step: .01 },
       { k: 'introDepth', label: 'Rush out of the depth (layers)', min: 0, max: 12, step: .1 },
       { k: 'introScale', label: 'Start size (1 = no zoom)', min: 0, max: 1, step: .01 },
-      { k: 'introBounce', label: 'Overshoot', min: 0, max: 3, step: .01 },
+      { k: 'introBounce', label: 'Bounce (overshoot)', min: 0, max: 3, step: .01 },
       { k: 'introAlternate', type: 'toggle', label: 'Alternate whirl direction per ring' },
     ] },
     { t: 'Brush texture', s: 'bristles · dry · paint-on', open: true, c: [
