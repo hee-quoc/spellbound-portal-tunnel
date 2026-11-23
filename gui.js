@@ -240,7 +240,8 @@ const GUI = (() => {
           w.querySelector('#u_logo').onchange = async e => { const f = e.target.files[0]; if (!f) return; const ok = await Banner.loadLogo(f); toast(ok ? 'Logo added' : 'Could not read this logo'); e.target.value = ''; sync(); };
           w.querySelector('#u_logoClear').onclick = () => { Banner.clearLogo(); sync(); };
         } else if (c.type === 'brushes') {
-          const keys = Object.keys(BR.LIBRARY).filter(k => k !== 'custom');
+          const OFF_BRAND = ['bristle', 'sumi', 'nib'];   // dry bristle, sumi wash, calligraphy: kept for ?dev, not offered to customers
+          const keys = Object.keys(BR.LIBRARY).filter(k => k !== 'custom' && (DEV || !OFF_BRAND.includes(k)));
           w.innerHTML = `<label>Brush</label><div class="brushes" role="radiogroup" aria-label="Brush">${keys.map(k =>
             `<button type="button" class="bt" role="radio" data-k="${k}" title="${BR.LIBRARY[k].name}"><canvas width="240" height="70"></canvas><span>${BR.LIBRARY[k].name}</span></button>`).join('')}
             <button type="button" class="bt" role="radio" data-k="custom" id="bt_custom" hidden title="Your uploaded SVG"><canvas width="240" height="70"></canvas><span>Your SVG</span></button></div>`;
