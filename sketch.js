@@ -42,7 +42,7 @@ const BASE = {
   stepAmp: 0, stepPos: .3, stepLen: .25, stepJitter: .5, stepSide: 1, stepBarb: 0, stepFacets: 0, thornAmp: 0, thornCount: 6, thornSide: 1, pressure: .1, nibAmt: 0, nibAngle: 35, bias: 0,
   halftone: 0, halftoneDot: .012, halftoneAngle: 45,   // halftone dot band beside the stroke (0 = off)
   tipMode: 'stamp', stampPlace: 'centre', stampPivot: 'auto', stampSize: 1, patternScale: 1, patternFit: 'stretch', patternSpacing: 0, patternOuter: 'sliced', patternInner: 'sliced',   // tip brush (uploaded SVG or built-in)
-  tipSource: 'upload', widthProfile: 'custom', theme: 'none',
+  tipSource: 'upload', widthProfile: 'custom', theme: 'none', uiHide: [],
   scatterSpacing: .12, scatterSize: .12, scatterSizeJit: .4, scatterRotJit: .2, scatterOffset: .03, scatterAlign: true, scatterByWidth: true,
   // brush texture (shader)
   bristles: 0, dry: 0, rough: .15, streak: 0, paintOn: 0, wallShade: .6,
@@ -155,6 +155,14 @@ const PRESETS_ALL = [
     { name: 'Thorn vortex', p: from('Chained vortex', 'thorn', { width: .3, thornAmp: 1.1, thornCount: 4, thornSide: 0, taperIn: .2, taperOut: .55, twist: 16, count: 11, spacing: 520, seed: 119 }) },
   );
 }
+// Coverage starts at 0.6 on every style (rect frames keep their own: their sides are separate strokes)
+PRESETS_ALL.forEach(pr => { if (pr.p.skeleton !== 'rect') pr.p.coverage = .6; });
+// Controls that make no sense for a style are hidden while it is loaded
+const UI_HIDE = {
+  'Chevron rise': ['geoRatio'], 'Chevron halftone': ['geoRatio'], 'Step chevron': ['geoRatio'], 'Thorn chevron': ['geoRatio'],
+  'Barb arch': ['twist', 'spin'], 'Facet arch': ['twist', 'spin'],
+};
+PRESETS_ALL.forEach(pr => { pr.p.uiHide = UI_HIDE[pr.name] || []; });
 // Presets hidden from the chip bar for now (definitions kept). Remove a name to bring it back.
 const HIDDEN_PRESETS = ['Wave ribbon', 'Helix brush', 'Frame taper', 'Hook spiral', 'Ink portal', 'Eye hook', 'Dry vortex', 'Sumi gate'];
 const PRESETS = PRESETS_ALL.filter(p => !HIDDEN_LAYOUTS.includes(p.p.layout) && !HIDDEN_PRESETS.includes(p.name));
@@ -287,9 +295,11 @@ function applyPreset(p, keepShape) {
   if (p.halftone === undefined && (PARAMS.halftone !== DEFAULTS_NOW.halftone || PARAMS.halftoneDot !== DEFAULTS_NOW.halftoneDot)) {
     intro.halftone = PARAMS.halftone; intro.halftoneDot = PARAMS.halftoneDot;
   }
+  const theme = PARAMS.theme;
   PARAMS = Object.assign(presetParams(p), keep, intro);
   needGeo = needMotif = true;
   snapshotDefaults();
+  if (theme && theme !== 'none') { applyTheme(theme); return; }   // the chosen edition stays on across styles
   if (PARAMS.introOn) openPortal();
 }
 // values the sliders reset to (double-click): the preset as it was loaded, plus any edition theme
@@ -301,6 +311,7 @@ function applyTheme(id) {
   // the public panel keeps the brand's clean brush: an edition only changes colour and light, never the texture
   const p = Object.assign({}, th.p);
   if (!GUI.DEV) THEME_TEXTURE_KEYS.forEach(k => delete p[k]);
+  (PARAMS.uiHide || []).forEach(k => delete p[k]);   // e.g. no spin on the arches
   Object.assign(PARAMS, p, { theme: id });
   needGeo = needMotif = true; snapshotDefaults();
   if (PARAMS.introOn) openPortal();

@@ -336,7 +336,7 @@ const GUI = (() => {
     const ed = $('editions');   // editions are parked: the sidebar only offers the brand colours
     if (ed) THEMES.forEach(th => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'tile ed'; b.dataset.id = th.id;
-      b.innerHTML = `<span class="grad" style="background:${grad(th.sw)}"></span>${th.name.replace(/ · .*/, '')}`;
+      b.innerHTML = `<span class="grad" style="background:${grad(th.sw)}"></span>${th.name.split(" · ").pop()}`;
       b.title = th.name;
       b.onclick = () => { applyTheme(th.id); sync(); };
       ed.appendChild(b);
@@ -347,7 +347,7 @@ const GUI = (() => {
       // background first, then the paint: the tile reads like the artwork
       b.innerHTML = `<span class="grad" style="background:${grad(sc.colors.slice(0, 4))}"></span>${sc.name.replace(/^SB /, '')}`;
       b.title = sc.name.replace(/^SB /, '') + ' · ' + sc.colors.join(' ');
-      b.onclick = () => { setParam('palette', sc.name); sync(); };
+      b.onclick = () => { setParam('palette', sc.name); PARAMS.theme = 'none'; sync(); };
       ph.appendChild(b);
     });
     buildChrome();
@@ -444,7 +444,7 @@ const GUI = (() => {
   function sync() {
     for (const { c, w } of items) {
       const all = DEV && $('showAll') && $('showAll').checked;
-      w.hidden = (c.show ? !c.show(PARAMS) : false) || (!!c.k && !all && !BASIC.has(c.k)) || w.dataset.dev === '1';
+      w.hidden = (c.show ? !c.show(PARAMS) : false) || (!!c.k && !all && !BASIC.has(c.k)) || (!!c.k && !all && (PARAMS.uiHide || []).includes(c.k)) || w.dataset.dev === '1';
       if (c.type === 'select') w.querySelector('select').value = PARAMS[c.k];
       else if (c.type === 'toggle') w.querySelector('input').checked = !!PARAMS[c.k];
       else if (c.type === 'text') { const ta = w.querySelector('textarea'); if (document.activeElement !== ta) ta.value = PARAMS[c.k] || ''; }

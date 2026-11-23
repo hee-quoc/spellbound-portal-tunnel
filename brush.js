@@ -279,8 +279,8 @@ const BR = (() => {
   const HALFTONE_FALL = 1;     // hole growth across the band (1 = even)
   // Returns a list of p5.Geometry chunks (each under 60k vertices: WebGL draws one buffer with 16-bit indices).
   const HALFTONE_MAX_CELLS = 4500;   // per layer: past this the screen coarsens a little so rebuilding stays quick
-  function halftoneDots(ribbons, P) {
-    const B = P.halftone * P.width, chunks = [];
+  function halftoneDots(ribbons, P, inset = 0) {
+    const B = P.halftone * P.width + inset, chunks = [];   // the band starts `inset` inside the original brush edge
     let edgeLen = 0;
     for (const rows of ribbons) for (let i = 1; i < rows.length; i++) edgeLen += Math.hypot(rows[i].ox - rows[i - 1].ox, rows[i].oy - rows[i - 1].oy);
     // the band must hold at least ~3 cells, or a thin brush with a low Halftone value shows no dots at all:
@@ -365,14 +365,16 @@ const BR = (() => {
         continue;
       }
       if (cov >= .5) {
-        // dark half (Euclidean screen): ink square with a round paper hole, hole area = 1 − cov
-        const r = Math.sqrt((1 - cov) / Math.PI), rr = r < .22 ? ray8 : ray, base = V.length;
-        for (const [c, s, sq] of rr) {
-          const wi = toW(px, py, c * r, s * r), wo = toW(px, py, c * sq, s * sq);
-          add(wi[0], wi[1], e.z, 0, 0, 1, e.t, 1); add(wo[0], wo[1], e.z, 0, 0, 1, e.t, 1);
+        // dark half (Euclidean screen): the paper shows as quarter circles in the cell's four corners (paper area
+        // 1 − cov). Paper at the corners breaks every cell edge, so where the dark half meets the dots there is
+        // no continuous ink border left to read as a line along the stroke.
+        const r = Math.min(.5, Math.sqrt((1 - cov) / Math.PI)), base = V.length, cw = toW(px, py, 0, 0), A = 5;
+        add(cw[0], cw[1], e.z, 0, 0, 1, e.t, 1);
+        for (const [cx, cy, t0] of [[.5, -.5, Math.PI], [.5, .5, 1.5 * Math.PI], [-.5, .5, 2 * Math.PI], [-.5, -.5, .5 * Math.PI]]) {
+          for (let k = 0; k <= A; k++) { const th = t0 - k / A * Math.PI / 2, w = toW(px, py, cx + r * Math.cos(th), cy + r * Math.sin(th)); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
         }
-        const nr = rr.length;
-        for (let k = 0; k < nr; k++) { const p0 = base + k * 2, p1 = base + ((k + 1) % nr) * 2; F.push([p0, p1, p0 + 1], [p1, p1 + 1, p0 + 1]); }
+        const nr = 4 * (A + 1);
+        for (let k = 0; k < nr; k++) F.push([base, base + 1 + k, base + 1 + (k + 1) % nr]);
       } else {
         // light half, further out: a round ink dot, dot area = cov; the dots shrink away from the stroke
         const r = Math.sqrt(cov / Math.PI); if (r < .03) continue;
@@ -400,6 +402,7 @@ const BR = (() => {
   // size, the slack becomes even gaps) or approx (tiles keep their size and spacing, centred; may be a hair short/long).
   // All tiles share one texture atlas, so the shader still samples a single mask.
   const PATTERN_CORNER = 32 * Math.PI / 180;    // a turn sharper than this is a corner
+  const PATTERN_MIN_W = .09;                     // narrowest band an uploaded pattern brush is drawn at
   const PT_SLOTS = ['side', 'outer', 'inner', 'start', 'end'];
   const PT = { side: null, outer: null, inner: null, start: null, end: null };   // { canvas, aspect, name }
   let ptAtlas = null, ptUV = {};
@@ -463,7 +466,8 @@ const BR = (() => {
 
   function patternGeometry(S, P, strokes) {
     if (!ptAtlas) buildAtlas();
-    const sc = P.patternScale || 1, W = P.width * sc, half = W / 2;
+    // an uploaded brush needs room to read: thin-line styles (chevrons, barbs) still give it a usable band
+    const sc = P.patternScale || 1, W = Math.max(P.width, PATTERN_MIN_W) * sc, half = W / 2;
     const aspectOf = k => PT[k] ? PT[k].aspect : (k === 'side' ? tipAspect : 1);
     const tileLen = Math.max(.01, W * aspectOf('side')), gapLen = tileLen * Math.max(-.9, P.patternSpacing || 0);   // < 0: tiles overlap (interlocking artwork)
     const fit = P.patternFit || 'stretch', has = k => !!ptUV[k];
@@ -733,6 +737,17 @@ const BR = (() => {
       }
       return rows;
     });
+    // halftone dissolves the brush itself: the stroke's outer part (step and hook included) is taken away and
+    // rebuilt as halftone cells, so there is no solid brush edge left inside the screen — ink → holes → dots
+    let htIn = 0;
+    if (P.halftone > 0 && !masked) {
+      htIn = Math.min(P.halftone * P.width * .45, P.width * .55);
+      for (const rows of ribbons) for (const R of rows) {
+        const sx = R.sox ?? R.ox, sy = R.soy ?? R.oy, ix = R.six ?? R.ix, iy = R.siy ?? R.iy;
+        const wl = (sx - ix) * R.nx + (sy - iy) * R.ny, keep = Math.max(wl * .3, wl - htIn);
+        R.ox = ix + R.nx * keep; R.oy = iy + R.ny * keep; R.sox = R.ox; R.soy = R.oy;
+      }
+    }
     if (masked && P.tipMode === 'scatter') return scatterGeometry(ribbons, P, seed);
 
     const g = new p5.Geometry(1, 1, function () {
@@ -758,7 +773,7 @@ const BR = (() => {
       }
     });
     g.gid = 'sb-brush-' + (gid++);
-    g.extra = P.halftone > 0 && !masked ? halftoneDots(ribbons, P) : [];
+    g.extra = P.halftone > 0 && !masked ? halftoneDots(ribbons, P, htIn) : [];
     g.worldZ = chain;   // chained strokes carry real depth (world units) instead of a unit extrusion
     return g;
   }
