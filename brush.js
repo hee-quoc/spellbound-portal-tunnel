@@ -278,6 +278,10 @@ const BR = (() => {
   //   halftoneAngle – screen angle (°)
   const HALFTONE_FALL = 1;     // hole growth across the band (1 = even)
   // Returns a list of p5.Geometry chunks (each under 60k vertices: WebGL draws one buffer with 16-bit indices).
+  // area of the superellipse |x|^p + |y|^p ≤ a^p is spotK(p)·a² (π for a circle, 2 for a diamond)
+  const lgamma = x => { const g = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, .1208650973866179e-2, -.5395239384953e-5];
+    let y = x, t = x + 5.5; t -= (x + .5) * Math.log(t); let ser = 1.000000000190015; for (const c of g) ser += c / ++y; return -t + Math.log(2.5066282746310005 * ser / x); };
+  const spotK = p => 4 * Math.exp(2 * lgamma(1 + 1 / p) - lgamma(1 + 2 / p));
   const HALFTONE_MAX_CELLS = 4500;   // per layer: past this the screen coarsens a little so rebuilding stays quick
   function halftoneDots(ribbons, P, inset = 0) {
     const B = P.halftone * P.width + inset, chunks = [];   // the band starts `inset` inside the original brush edge
@@ -349,41 +353,43 @@ const BR = (() => {
       if (!st.closed && (i0 === 0 || i0 === L.length - 1)) continue;          // past a stroke end: the band stops there
       // square distance out from the edge: the largest of the nearby edge tangents (gives mitred corners)
       let d = -1e9;
-      const reach = (B + cell) * (B + cell);
+      // look far enough along the edge to reach the straight arms past a sharp corner (the rounded normals right at
+      // the tip would otherwise give a too-small distance and leave stray dots outside the mitred corner)
+      const reach = (1.6 * B + cell) * (1.6 * B + cell);
       for (const dir of [1, -1]) for (let k = 0, i = i0; k < L.length; k++, i += dir) {
         if (st.closed) i = (i + L.length) % L.length; else if (i < 0 || i >= L.length) break;
         const e = L[i]; if ((px - e.x) ** 2 + (py - e.y) ** 2 > reach && k > 0) break;
         d = Math.max(d, (px - e.x) * e.nx + (py - e.y) * e.ny);
       }
-      if (d < -cell * .75 || d >= B) continue;                                  // inside the solid stroke / past the band
+      // open strokes: the band narrows to nothing toward each end instead of being cut off square
+      const Bt = st.closed ? B : B * Math.max(.04, sstep(0, .12, L[i0].t) * sstep(0, .12, 1 - L[i0].t));
+      if (d < -cell * .75 || d >= Bt) continue;                                 // inside the solid stroke / past the band
       if (V.length > 60000) flush();
-      const cov = 1 - Math.pow(Math.min(1, Math.max(0, d / B)), HALFTONE_FALL);   // ink share of this cell: 1 at the edge → 0 outside
+      const cov = 1 - Math.pow(Math.min(1, Math.max(0, d / Bt)), HALFTONE_FALL);   // ink share of this cell: 1 at the edge → 0 outside
       const e = L[i0];
       if (cov > .995) {                                                        // full ink: a plain square
         const q = [[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5]].map(([u, v]) => { const w = toW(px, py, u, v); return add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); });
         F.push([q[0], q[1], q[2]], [q[0], q[2], q[3]]);
         continue;
       }
-      if (cov >= .5) {
-        // dark half (Euclidean screen): the paper shows as quarter circles in the cell's four corners (paper area
-        // 1 − cov). Paper at the corners breaks every cell edge, so where the dark half meets the dots there is
-        // no continuous ink border left to read as a line along the stroke.
-        const r = Math.min(.5, Math.sqrt((1 - cov) / Math.PI)), base = V.length, cw = toW(px, py, 0, 0), A = 5;
-        add(cw[0], cw[1], e.z, 0, 0, 1, e.t, 1);
-        for (const [cx, cy, t0] of [[.5, -.5, Math.PI], [.5, .5, 1.5 * Math.PI], [-.5, .5, 2 * Math.PI], [-.5, -.5, .5 * Math.PI]]) {
-          for (let k = 0; k <= A; k++) { const th = t0 - k / A * Math.PI / 2, w = toW(px, py, cx + r * Math.cos(th), cy + r * Math.sin(th)); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
-        }
-        const nr = 4 * (A + 1);
-        for (let k = 0; k < nr; k++) F.push([base, base + 1 + k, base + 1 + (k + 1) % nr]);
+      // Euclidean spot that morphs without a jump: below 50% an ink spot at the centre grows from a circle into a
+      // diamond (|x|^p + |y|^p = a^p, p 2 → 1); at exactly 50% the diamonds touch corner to corner (checkerboard);
+      // above 50% the paper is the same diamond-to-circle spot sitting on the cell corners, shrinking away.
+      const dark = cov >= .5, share = dark ? 1 - cov : cov, pw = 2 - 2 * share;   // pw: 2 = circle … 1 = diamond
+      const a = Math.min(.5, Math.sqrt(share / spotK(pw))); if (!dark && a < .03) continue;
+      const base = V.length, cw = toW(px, py, 0, 0), SEG = a < .15 ? 3 : 6;
+      add(cw[0], cw[1], e.z, 0, 0, 1, e.t, 1);
+      const sp = (t, cx, cy) => { const c = Math.cos(t), s = Math.sin(t); return toW(px, py, cx + a * Math.sign(c) * Math.pow(Math.abs(c), 2 / pw), cy + a * Math.sign(s) * Math.pow(Math.abs(s), 2 / pw)); };
+      if (!dark) {
+        for (let k = 0; k < SEG * 4; k++) { const w = sp(k / (SEG * 4) * Math.PI * 2, 0, 0); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
       } else {
-        // light half, further out: a round ink dot, dot area = cov; the dots shrink away from the stroke
-        const r = Math.sqrt(cov / Math.PI); if (r < .03) continue;
-        const rr = r < .22 ? ray8 : ray, base = V.length, cw = toW(px, py, 0, 0);
-        add(cw[0], cw[1], e.z, 0, 0, 1, e.t, 1);
-        for (const [c, s] of rr) { const w = toW(px, py, c * r, s * r); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
-        const nr = rr.length;
-        for (let k = 0; k < nr; k++) F.push([base, base + 1 + k, base + 1 + (k + 1) % nr]);
+        // ink = the cell minus a quarter paper spot in each corner (walked round so the outline stays star-shaped)
+        for (const [cx, cy, t0] of [[.5, -.5, Math.PI], [.5, .5, 1.5 * Math.PI], [-.5, .5, 2 * Math.PI], [-.5, -.5, .5 * Math.PI]]) {
+          for (let k = 0; k <= SEG; k++) { const w = sp(t0 - k / SEG * Math.PI / 2, cx, cy); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
+        }
       }
+      const nr = V.length - base - 1;
+      for (let k = 0; k < nr; k++) F.push([base, base + 1 + k, base + 1 + (k + 1) % nr]);
     }
     flush();
     return chunks;
