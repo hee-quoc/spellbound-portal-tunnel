@@ -44,24 +44,6 @@ const SB = (() => {
         for (let j = 0; j < k; j++) { const a = -Math.PI / 2 + j / k * T; poly.push([Math.cos(a), Math.sin(a)]); }
         return soften(poly, P.soften);
       }
-      case 'arch': {
-        const poly = [];
-        for (let j = 0; j <= 48; j++) { const a = Math.PI + j / 48 * Math.PI; poly.push([Math.cos(a), Math.sin(a)]); }
-        poly.push([1, P.archH], [-1, P.archH]);
-        const m = Math.max(2, Math.round(mix(40, 2, P.soften))), dense = [];
-        for (let i = 0; i < poly.length; i++) {
-          const a = poly[i], b = poly[(i + 1) % poly.length], seg = i < 48 ? 1 : m;
-          for (let k = 0; k < seg; k++) { const t = k / seg; dense.push([mix(a[0], b[0], t), mix(a[1], b[1], t)]); }
-        }
-        return P.soften > 0.001 ? chaikin(dense, 3) : dense;
-      }
-      case 'star': {
-        for (let k = 0; k < 720; k++) {
-          const a = k / 720 * T, r = 1 + P.petalAmp * Math.cos(P.petals * (a + Math.PI / 2));
-          out.push([r * Math.cos(a), r * Math.sin(a)]);
-        }
-        return out;
-      }
       case 'custom':
         if (customPts && customPts.length > 8) return customPts.map(p => p.slice());
       // falls through to squircle when nothing is loaded
@@ -97,13 +79,13 @@ const SB = (() => {
     for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, sc = 1 / Math.max((x1 - x0) / 2, (y1 - y0) / 2);
     const rot = (P.shapeRot || 0) * Math.PI / 180, co = Math.cos(rot), si = Math.sin(rot);
-    pts = pts.map(p => {
-      const x = (p[0] - cx) * sc * P.aspect, y = (p[1] - cy) * sc;
-      return [x * co - y * si, x * si + y * co];
-    });
+    pts = pts.map(p => [(p[0] - cx) * sc * P.aspect, (p[1] - cy) * sc]);
+    // pick the stroke's start (top of the shape) BEFORE rotating, so the gap / chisel step turn with the shape
+    // instead of jumping back to the top while the Rotate slider moves (that read as a warped shape)
     let best = 0, bv = 1e9;
     pts.forEach((p, i) => { const v = p[1] + .25 * Math.abs(p[0]); if (v < bv) { bv = v; best = i; } });
     pts = pts.slice(best).concat(pts.slice(0, best));
+    pts = pts.map(([x, y]) => [x * co - y * si, x * si + y * co]);
     // clockwise on screen (y down) => positive signed area; normals then point outward for any shape
     let sa = 0;
     for (let i = 0; i < N; i++) { const p = pts[i], q = pts[(i + 1) % N]; sa += p[0] * q[1] - q[0] * p[1]; }

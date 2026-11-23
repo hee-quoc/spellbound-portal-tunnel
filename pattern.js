@@ -26,7 +26,7 @@ class Element {
 
   // the brush strokes of this layer, rebuilt when skeleton / brush rules change
   buildGeo(spine, P) {
-    if (this.geo && typeof freeGeometry === 'function') freeGeometry(this.geo);
+    if (this.geo && typeof freeGeometry === 'function') { (this.geo.extra || []).forEach(g => freeGeometry(g)); freeGeometry(this.geo); }
     this.geo = BR.layerGeometry(spine, P, this.slot, this.id + 1);
   }
 
@@ -41,7 +41,7 @@ class Element {
     const dz = P.camZ - zz;                     // distance in front of the camera
     // bend the tunnel: offset grows with depth (vanishing point drift)
     translate(pos.x + P.curveX * dz * dz * 1e-4, pos.y + P.curveY * dz * dz * 1e-4, zz);
-    rotateZ(P.twist * PI / 180 * (pos.tw !== null && pos.tw !== undefined ? pos.tw : dz / 500) + P.spin * TWO_PI * t + this.slot * P.breakDrift * TWO_PI + pos.irot);
+    rotateZ(P.twist * PI / 180 * pos.tw + P.spin * TWO_PI * t + this.slot * P.breakDrift * TWO_PI + pos.irot);
     const len = Math.max(10, P.length + mount * P.breatheLength);
     scale(P.radius * pos.iscale, P.radius * pos.iscale, chained ? 1 : len);
 
@@ -66,15 +66,22 @@ class Element {
     const tipCopies = P.brush === 'custom' && (P.tipMode === 'scatter' || P.tipMode === 'stamp');
     c.bristles = tipCopies ? 0 : P.bristles; c.dry = tipCopies ? 0 : P.dry; c.rough = tipCopies ? 0 : P.rough; c.streak = tipCopies ? 0 : P.streak;
     c.reveal = pos.reveal; c.fade = pos.ifade; c.seed = this.id * 1.37 + P.seed * .01; c.wallShade = P.wallShade;
-    c.mask = (P.brush === 'custom' && BR.tipMask()) ? BR.tipMask() : null;
+    // pattern brush: every tile carries its own 0..1 uv, so the uv-driven gradient would restart in each tile and the
+    // brush would read as scattered fragments — paint the tiles in one flat colour per layer instead
+    const patternTiles = P.brush === 'custom' && P.tipMode === 'pattern';
+    if (patternTiles) { c.scale = 0; c.reveal = 1; }
+    c.mask = BR.maskFor(P);   // pattern brush: the tile atlas; other tip modes: the uploaded tip
     gs.apply();
     model(this.geo);
+    if (this.geo.extra) for (const g of this.geo.extra) model(g);   // halftone screen chunks
     resetShader();
     pop();
   }
 }
 
 ////////////////////////////////////////////////
+const WHIRL_STRETCH = 1.6;   // the whirl lasts this many times the opening duration (slow glide to a stop)
+
 class Motif {
   constructor(P) {
     this.elements = [];
@@ -107,19 +114,22 @@ class Motif {
       const depth01 = (s + total / 2) / total;                          // 0 = deepest … 1 = front
       const q = Math.min(1, Math.max(0, (it - spread * depth01) / run));
       const push = (1 - easeOutBack(q)) * P.introDepth;                 // in layers (briefly < 0 = overshoots toward the camera)
+      // twist is read from the layer's resting place, so rushing through depth does not turn it (no curling during the intro)
+      let tw = (P.camZ - s) / 500;
       s -= push * P.spacing;
       let x = 0, y = 0, z = s;
-      let near = (s + total / 2) / total, tw = null;
+      let near = (s + total / 2) / total;
       if (P.depthMode === 'geometric') {
         // every layer is `geoRatio` times the size of the one in front of it (graphic, evenly shrinking rhythm)
-        const u = (((i + travel / P.spacing) % n) + n) % n - push;        // 0 = deepest … n = at the front
+        const uRest = (((i + travel / P.spacing) % n) + n) % n, u = uRest - push;   // 0 = deepest … n = at the front
         const qq = 1 / Math.min(.97, Math.max(.2, P.geoRatio));
         z = P.camZ - P.geoNear * Math.pow(qq, n - u);
-        s = z; near = Math.max(0, u / n); tw = n - u;   // twist turns evenly per layer in geometric mode
+        s = z; near = Math.max(0, u / n); tw = n - uRest;   // twist turns evenly per layer in geometric mode
       }
       if (P.layout === 'row') {
         const a = P.rowAngle * PI / 180;
         x = s * Math.cos(a); y = s * Math.sin(a); z = P.rowDepth;
+        if (P.depthMode !== 'geometric') tw = (P.camZ - P.rowDepth) / 500;   // a row sits at one depth: same twist for every frame
       } else if (P.layout === 'helix' || P.layout === 'wave') {
         const ph = TWO_PI * (P.pathFreq * s / 1000 + P.pathSpeed * t);
         const round = P.layout === 'helix' ? 1 : P.pathRound;
@@ -145,16 +155,23 @@ class Motif {
     for (const el of this.elements) el.buildGeo(spine, P);
   }
 
-  // Portal opening (game-style): rings burst out of the centre one after another, deepest first,
-  // whirl in from an extra spin and settle with a little overshoot; everything fades in from the background fast.
+  // Portal opening (game-style): rings burst out of the centre one after another, deepest first, while the whole
+  // tunnel whirls one way and glides to a stop; everything fades in from the background fast.
   intro(placed, P, t) {
     const n = placed.length, it = (P.introStart === null || P.introStart === undefined) ? 1e9 : t - P.introStart;
     const dur = Math.max(.05, P.introDur), spread = P.introStagger * dur;
     const easeOutBack = x => { const c1 = 1.70158 * P.introBounce, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+    // the whirl turns the whole tunnel as one piece (one shared clock), so the stack never bends into a curve;
+    // only the depth rush and the fade-in are staggered ring by ring.
+    // It only ever turns ONE way: it arrives already spinning, keeps going in that direction, slows down and stops
+    // on its resting angle (ease-out, no overshoot, never swings back). It runs a little longer than the rush so the
+    // last of the turn is a slow glide after the rings have landed.
+    const qs = Math.min(1, Math.max(0, it / (dur * WHIRL_STRETCH)));
+    const whirl = qs >= 1 ? 0 : -P.introSpin * TWO_PI * Math.pow(1 - qs, 4);   // easeOutQuart, rising to 0
     placed.forEach((p, k) => {                       // k: 0 = deepest
       const q = p.iq;                                // progress from place(): same stagger as the depth rush
       p.iscale = q >= 1 ? 1 : P.introScale + (1 - P.introScale) * easeOutBack(q);
-      p.irot = q >= 1 ? 0 : P.introSpin * TWO_PI * (1 - easeOutBack(q)) * (k % 2 && P.introAlternate ? -1 : 1);
+      p.irot = whirl * (k % 2 && P.introAlternate ? -1 : 1);
       // each layer stays hidden until its turn, then fades in fast while it is still deep (no ghost copies)
       p.ifade = Math.min(1, Math.max(0, it / Math.max(.01, P.introFade))) * Math.min(1, q * 5) * p.seam;
     });

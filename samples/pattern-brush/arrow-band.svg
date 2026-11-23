@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 100">
+  <!-- side tile: band on the inside (bottom), an arrow on the outside (top) pointing along the path, a notch at the start -->
+  <path d="M0 55 H300 V100 H0 Z M0 55 H18 V72 H0 Z" fill-rule="evenodd"/>
+  <path d="M110 10 H190 L220 30 L190 50 H110 Z"/>
+</svg>

@@ -2,7 +2,7 @@
 // brush.js — SKELETON + BRUSH system (replaces the shape tubes)
 //
 //   Skeleton (khung xương) = the spine a stroke travels along:
-//     ring   – a base shape's outline (circle, squircle, polygon, arch, star)
+//     ring   – a base shape's outline (circle, squircle, polygon)
 //     spiral – an open coil that tightens toward the centre
 //     path   – any SVG path you upload (open or closed)
 //
@@ -44,8 +44,13 @@ const BR = (() => {
     nib:       { name: 'Calligraphy nib',   width: .2,  taperIn: .05, taperOut: .1,  swell: 0,   flareIn: 0,   flareOut: 0,   stepAmp: 0,   pressure: .05, nibAmt: .9, bias: 0,   bristles: 0,  dry: 0,   rough: .1,  streak: 0, nibAngle: 35 },
     bristle:   { name: 'Dry bristle',       width: .18, taperIn: .1,  taperOut: .35, swell: .1,  flareIn: 0,   flareOut: 0,   stepAmp: 0,   pressure: .25, nibAmt: 0,  bias: 0,   bristles: 22, dry: .6,  rough: .45, streak: .35 },
     sumi:      { name: 'Sumi wash',         width: .26, taperIn: .2,  taperOut: .6,  swell: .35, flareIn: 0,   flareOut: 0,   stepAmp: 0,   pressure: .35, nibAmt: .3, bias: 0,   bristles: 40, dry: .3,  rough: .6,  streak: .2 },
+    barb:      { name: 'Barb step',         width: .045, taperIn: 0,  taperOut: 0,   swell: 0,   flareIn: 0,   flareOut: 0,   stepAmp: 2.4, pressure: 0,   nibAmt: 0,  bias: 0,   bristles: 0,  dry: 0,   rough: 0,   streak: 0, stepPos: .45, stepLen: .6, stepJitter: .3, stepBarb: .9 },
+    thorn:     { name: 'Thorn',             width: .1,  taperIn: .04, taperOut: .3,  swell: 0,   flareIn: 0,   flareOut: 0,   stepAmp: 0,   pressure: 0,   nibAmt: 0,  bias: 0,   bristles: 0,  dry: 0,   rough: 0,   streak: 0, thornAmp: .9, thornCount: 6 },
     custom:    { name: 'Custom tip (SVG)',  width: .18, taperIn: 0,   taperOut: 0,   swell: 0,   flareIn: 0,   flareOut: 0,   stepAmp: 0,   pressure: 0,   nibAmt: 0,  bias: 0,   bristles: 0,  dry: 0,   rough: 0,   streak: 0 },
   };
+  // shape extras every brush carries (0 = off), so switching brush always resets them
+  const EXTRA = { stepBarb: 0, stepFacets: 0, thornAmp: 0, thornCount: 6, thornSide: 1 };
+  for (const k in LIBRARY) LIBRARY[k] = Object.assign({}, EXTRA, LIBRARY[k]);
   const BRUSH_KEYS = Object.keys(LIBRARY.marker).filter(k => k !== 'name');
 
   // ------------------------------------------------------------ spines
@@ -143,10 +148,22 @@ const BR = (() => {
     // hook flare: the ends curl outward to one side (brand assets 02 / 03)
     const fi = B.flareIn * (1 - sstep(0, .07, t)), fo = B.flareOut * (1 - sstep(0, .07, 1 - t));
     hi += (fi + fo) * .5;
+    // thorns: hooked spikes along the edge — a sheer face, then a concave slope back down (brand thorn frames)
+    if (B.thornAmp > 0) {
+      const ends = sstep(0, .05, t) * sstep(0, .05, 1 - t), n = Math.max(1, B.thornCount);
+      const spike = ph => { const f = ph - Math.floor(ph); return Math.pow(Math.max(0, 1 - f / .32), 2.6); };
+      const a = B.thornAmp * .5 * ends * w;
+      if (B.thornSide !== -1) hi += a * spike(t * n + hash(s, 17));
+      if (B.thornSide !== 1) lo -= a * .8 * spike(t * n + .5 + hash(s, 19));
+    }
     // step chisel: a raised, squared-off section on the outer edge (brand asset 01)
     if (B.stepAmp > 0) {
       const sp = clamp(B.stepPos + (hash(s, 9) - .5) * B.stepJitter, 0, 1);
-      const bump = sstep(sp - .03, sp + .01, t) * (1 - sstep(sp + B.stepLen - .01, sp + B.stepLen + .03, t));
+      let bump = (B.stepBarb > 0 ? sstep(sp - .004, sp, t) : sstep(sp - .03, sp + .01, t)) * (1 - sstep(sp + B.stepLen - .01, sp + B.stepLen + .03, t));
+      // barb: the step's front edge is a hooked spike — a sheer face, then a concave dip down to the step
+      if (B.stepBarb > 0) { const x = (t - sp) / .06; if (x >= 0 && x < 1) bump *= 1 + B.stepBarb * Math.pow(1 - x, 2.2); }
+      // facets: the step's outer edge runs in straight chords (a polygon round a round skeleton)
+      if (B.stepFacets > 2 && bump > 0) { const seg = 2 * Math.PI / B.stepFacets, ph = ((ang % seg) + seg) % seg - seg / 2; bump += (1 / Math.cos(ph) - 1) * 2 / (Math.max(.01, B.width) * Math.max(.1, B.stepAmp)) * Math.min(1, bump); }
       if (B.stepSide < 0) lo -= B.stepAmp * bump * .5; else hi += B.stepAmp * bump * .5;
     }
     const sh = B.bias * .5 * w; lo += sh; hi += sh;
@@ -177,12 +194,20 @@ const BR = (() => {
   function rectRibbons(P, seed) {
     const C = rectCorners(P, seed), W = P.width, out = [];
     const thickAt = { L: ['start', 'end', 'start', 'end'], pinwheel: ['start', 'start', 'start', 'start'], 'pinwheel-rev': ['end', 'end', 'end', 'end'], corners: ['both', 'both', 'both', 'both'], uniform: ['none', 'none', 'none', 'none'] }[P.rectMode] || ['start', 'end', 'start', 'end'];
+    // Clean corners: a thick end runs on exactly to the OUTER edge of the side it meets, so the two outer
+    // edges close into one sharp square corner (no step, no notch sticking out past the frame).
+    const mx = (C[0][0] + C[1][0] + C[2][0] + C[3][0]) / 4, my = (C[0][1] + C[1][1] + C[2][1] + C[3][1]) / 4;
+    const sideSign = k => {                                            // +1 when the side's +normal points out of the frame
+      const c0 = C[k], c1 = C[(k + 1) % 4], dx = c1[0] - c0[0], dy = c1[1] - c0[1], len = Math.hypot(dx, dy) || 1;
+      return Math.sign(dy / len * ((c0[0] + c1[0]) / 2 - mx) - dx / len * ((c0[1] + c1[1]) / 2 - my)) || 1;
+    };
+    const outerOf = k => { const off = P.bias * .5 * W; return Math.max(0, sideSign(k) > 0 ? W / 2 + off : W / 2 - off); };   // how far side k's paint reaches outward at full width
     for (let k = 0; k < 4; k++) {
       const c0 = C[k], c1 = C[(k + 1) % 4], dx = c1[0] - c0[0], dy = c1[1] - c0[1], len = Math.hypot(dx, dy) || 1;
-      const tx = dx / len, ty = dy / len, nx = ty, ny = -tx, mode = thickAt[k], s = seed * 11 + k;
-      const ext = P.rectOver * W, cut = P.rectGap;
-      const sa = (mode === 'start' || mode === 'both') ? -ext / len : (mode === 'end' ? cut : 0);
-      const sb = (mode === 'end' || mode === 'both') ? 1 + ext / len : (mode === 'start' ? 1 - cut : 1);
+      const tx = dx / len, ty = dy / len, nx = ty, ny = -tx, mode = thickAt[k], s = seed * 11 + k, sg = sideSign(k);
+      const cut = P.rectGap, extA = outerOf((k + 3) % 4), extB = outerOf((k + 1) % 4);
+      const sa = (mode === 'start' || mode === 'both' || mode === 'none') ? -extA / len : (mode === 'end' ? cut : 0);
+      const sb = (mode === 'end' || mode === 'both' || mode === 'none') ? 1 + extB / len : (mode === 'start' ? 1 - cut : 1);
       const rows = [], M = 140, ang = Math.atan2(ty, tx);
       for (let i = 0; i <= M; i++) {
         const t = i / M, sp = mix(sa, sb, t);
@@ -194,10 +219,14 @@ const BR = (() => {
         if (P.nibAmt > 0) f *= mix(1, Math.max(.12, Math.abs(Math.sin(ang - P.nibAngle * Math.PI / 180))), P.nibAmt);
         const w = W * f, off = P.bias * .5 * w;
         let lo = -w / 2 + off, hi = w / 2 + off;
-        if (P.rectHook > 0 && mode !== 'none') hi += P.rectHook * W * .5 * Math.pow(Math.max(0, (d - .8) / .2), 2.5);   // the little curled hook at the thick corner
+        if (P.rectHook > 0 && mode !== 'none' && sp >= 0 && sp <= 1) {   // the little hook at the thick corner grows INTO the frame, so the outer corner stays one clean square
+          const hk = P.rectHook * W * .5 * Math.pow(Math.max(0, (d - .8) / .2), 2.5);
+          if (sg > 0) lo -= hk; else hi += hk;
+        }
         const wob = P.wobble ? (noise1(sp * 6 + s, s + 3) * .7 + noise1(sp * 17 + s, s + 5) * .3) * P.wobble : 0;
-        const bx = c0[0] + dx * sp + nx * wob, by = c0[1] + dy * sp + ny * wob;
-        rows.push({ zf: .5, t, ix: bx + nx * lo, iy: by + ny * lo, ox: bx + nx * hi, oy: by + ny * hi, nx, ny, ang });
+        const bx = c0[0] + dx * sp + nx * wob, by = c0[1] + dy * sp + ny * wob, shi = w / 2 + off, slo = -w / 2 + off;
+        rows.push({ zf: .5, t, ix: bx + nx * lo, iy: by + ny * lo, ox: bx + nx * hi, oy: by + ny * hi, nx, ny, ang,
+          six: bx + nx * slo, siy: by + ny * slo, sox: bx + nx * shi, soy: by + ny * shi });
       }
       out.push(rows);
     }
@@ -237,6 +266,429 @@ const BR = (() => {
     return g;
   }
 
+  // HALFTONE (print AM screen, Euclidean dot): beyond the stroke's outer edge the ink carries on as a screen that
+  // fades OUTWARD. Right at the edge it is solid with tiny round paper holes; the holes grow until half the cell is
+  // ink, then it flips to round ink dots that shrink away from the stroke until nothing is left.
+  // Dark cells are "ink square minus a round hole", so neighbouring cells always tile with no gaps.
+  // The band follows the brush shape: its distance is measured square to the stroke edge (sharp mitred corners), and
+  // it stops at the stroke's two ends instead of wrapping round the tips. The grid lies on the layer's plane, so
+  // the screen shrinks with perspective like the rest of the stroke.
+  //   halftone      – band width, in multiples of the brush width
+  //   halftoneDot   – screen pitch (cell size), in units of the portal radius
+  //   halftoneAngle – screen angle (°)
+  const HALFTONE_FALL = 1;     // hole growth across the band (1 = even)
+  // Returns a list of p5.Geometry chunks (each under 60k vertices: WebGL draws one buffer with 16-bit indices).
+  const HALFTONE_MAX_CELLS = 4500;   // per layer: past this the screen coarsens a little so rebuilding stays quick
+  function halftoneDots(ribbons, P) {
+    const B = P.halftone * P.width, chunks = [];
+    let edgeLen = 0;
+    for (const rows of ribbons) for (let i = 1; i < rows.length; i++) edgeLen += Math.hypot(rows[i].ox - rows[i - 1].ox, rows[i].oy - rows[i - 1].oy);
+    // the band must hold at least ~3 cells, or a thin brush with a low Halftone value shows no dots at all:
+    // there the screen gets finer than the chosen dot size instead of disappearing
+    const cell = Math.max(.0025, Math.min(P.halftoneDot, B / 3), Math.sqrt(edgeLen * B * 1.2 / HALFTONE_MAX_CELLS));
+    if (B < cell) return chunks;
+    let V, N, U, F;
+    const flush = () => {
+      if (V && V.length) { const vv = V, nn = N, uu = U, ff = F; const g = new p5.Geometry(1, 1, function () { this.vertices = vv; this.vertexNormals = nn; this.uvs = uu; this.faces = ff; }); g.gid = 'sb-halftone-' + (gid++); chunks.push(g); }
+      V = []; N = []; U = []; F = [];
+    };
+    flush();
+    const add = (x, y, z, nx, ny, nz, u, v) => { V.push(new p5.Vector(x, y, z)); N.push(new p5.Vector(nx, ny, nz)); U.push(u, v); return V.length - 1; };
+    // edge samples of every stroke (smooth outer edge: no chisel step / hook)
+    const strokes = [];
+    for (const rows of ribbons) {
+      const L = rows.map(R => ({ x: R.sox ?? R.ox, y: R.soy ?? R.oy, nx: R.nx, ny: R.ny, z: R.zf, t: R.t }));
+      const closed = L.length > 2 && Math.hypot(L[0].x - L[L.length - 1].x, L[0].y - L[L.length - 1].y) < 1e-3;
+      strokes.push({ L, closed });
+    }
+    const bs = B + cell, grid = new Map(), key = (i, j) => i * 73856093 ^ j * 19349663;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    strokes.forEach((st, si) => st.L.forEach((e, i) => {
+      const k = key(Math.floor(e.x / bs), Math.floor(e.y / bs));
+      (grid.get(k) || grid.set(k, []).get(k)).push([si, i]);
+      x0 = Math.min(x0, e.x); y0 = Math.min(y0, e.y); x1 = Math.max(x1, e.x); y1 = Math.max(y1, e.y);
+    }));
+    x0 -= bs; y0 -= bs; x1 += bs; y1 += bs;
+    const a = P.halftoneAngle * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    const cx0 = (x0 + x1) / 2, cy0 = (y0 + y1) / 2;
+    // cell outline: 16 rays from the centre; the square's corners fall exactly on rays 2, 6, 10, 14
+    const RAYS = 16, ray = [];
+    for (let k = 0; k < RAYS; k++) {
+      const t = k / RAYS * Math.PI * 2, c = Math.cos(t), s = Math.sin(t), sq = .5 / Math.max(Math.abs(c), Math.abs(s));
+      ray.push([c, s, sq]);
+    }
+    const ray8 = ray.filter((_, k) => k % 2 === 0);   // small holes: 8 rays are plenty (corners stay on rays 1, 3, 5, 7)
+    const toW = (px, py, u, v) => [px + (u * ca - v * sa) * cell, py + (u * sa + v * ca) * cell];
+    // only visit grid cells whose centre lies in a hash bucket next to some edge sample (each cell once: by its own bucket)
+    const buckets = new Set();
+    strokes.forEach(st => st.L.forEach(e => { const i = Math.floor(e.x / bs), j = Math.floor(e.y / bs); for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) buckets.add((i + di) + ',' + (j + dj)); }));
+    const cells = [];
+    for (const bk of buckets) {
+      const [bx, by] = bk.split(',').map(Number), wx0 = bx * bs, wy0 = by * bs, wx1 = wx0 + bs, wy1 = wy0 + bs;
+      let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+      for (const [wx, wy] of [[wx0, wy0], [wx1, wy0], [wx0, wy1], [wx1, wy1]]) {
+        const dx = wx - cx0, dy = wy - cy0, u = (dx * ca + dy * sa) / cell, v = (-dx * sa + dy * ca) / cell;
+        u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+      }
+      for (let gi = Math.floor(u0); gi <= Math.ceil(u1); gi++) for (let gj = Math.floor(v0); gj <= Math.ceil(v1); gj++) {
+        const px = cx0 + (gi * ca - gj * sa) * cell, py = cy0 + (gi * sa + gj * ca) * cell;
+        if (Math.floor(px / bs) === bx && Math.floor(py / bs) === by) cells.push(px, py);
+      }
+    }
+    for (let ci = 0; ci < cells.length; ci += 2) {
+      const px = cells[ci], py = cells[ci + 1];
+      // nearest edge sample
+      const bi = Math.floor(px / bs), bj = Math.floor(py / bs);
+      let best = null, bd = 1e9;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const Lb = grid.get(key(bi + di, bj + dj)); if (!Lb) continue;
+        for (const [si, i] of Lb) { const e = strokes[si].L[i], d2 = (px - e.x) ** 2 + (py - e.y) ** 2; if (d2 < bd) { bd = d2; best = [si, i]; } }
+      }
+      if (!best) continue;
+      const st = strokes[best[0]], L = st.L, i0 = best[1];
+      if (!st.closed && (i0 === 0 || i0 === L.length - 1)) continue;          // past a stroke end: the band stops there
+      // square distance out from the edge: the largest of the nearby edge tangents (gives mitred corners)
+      let d = -1e9;
+      const reach = (B + cell) * (B + cell);
+      for (const dir of [1, -1]) for (let k = 0, i = i0; k < L.length; k++, i += dir) {
+        if (st.closed) i = (i + L.length) % L.length; else if (i < 0 || i >= L.length) break;
+        const e = L[i]; if ((px - e.x) ** 2 + (py - e.y) ** 2 > reach && k > 0) break;
+        d = Math.max(d, (px - e.x) * e.nx + (py - e.y) * e.ny);
+      }
+      if (d < -cell * .75 || d >= B) continue;                                  // inside the solid stroke / past the band
+      if (V.length > 60000) flush();
+      const cov = 1 - Math.pow(Math.min(1, Math.max(0, d / B)), HALFTONE_FALL);   // ink share of this cell: 1 at the edge → 0 outside
+      const e = L[i0];
+      if (cov > .995) {                                                        // full ink: a plain square
+        const q = [[-.5, -.5], [.5, -.5], [.5, .5], [-.5, .5]].map(([u, v]) => { const w = toW(px, py, u, v); return add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); });
+        F.push([q[0], q[1], q[2]], [q[0], q[2], q[3]]);
+        continue;
+      }
+      if (cov >= .5) {
+        // dark half (Euclidean screen): ink square with a round paper hole, hole area = 1 − cov
+        const r = Math.sqrt((1 - cov) / Math.PI), rr = r < .22 ? ray8 : ray, base = V.length;
+        for (const [c, s, sq] of rr) {
+          const wi = toW(px, py, c * r, s * r), wo = toW(px, py, c * sq, s * sq);
+          add(wi[0], wi[1], e.z, 0, 0, 1, e.t, 1); add(wo[0], wo[1], e.z, 0, 0, 1, e.t, 1);
+        }
+        const nr = rr.length;
+        for (let k = 0; k < nr; k++) { const p0 = base + k * 2, p1 = base + ((k + 1) % nr) * 2; F.push([p0, p1, p0 + 1], [p1, p1 + 1, p0 + 1]); }
+      } else {
+        // light half, further out: a round ink dot, dot area = cov; the dots shrink away from the stroke
+        const r = Math.sqrt(cov / Math.PI); if (r < .03) continue;
+        const rr = r < .22 ? ray8 : ray, base = V.length, cw = toW(px, py, 0, 0);
+        add(cw[0], cw[1], e.z, 0, 0, 1, e.t, 1);
+        for (const [c, s] of rr) { const w = toW(px, py, c * r, s * r); add(w[0], w[1], e.z, 0, 0, 1, e.t, 1); }
+        const nr = rr.length;
+        for (let k = 0; k < nr; k++) F.push([base, base + 1 + k, base + 1 + (k + 1) % nr]);
+      }
+    }
+    flush();
+    return chunks;
+  }
+
+  // ------------------------------------------------------------ PATTERN BRUSH (like Illustrator's Pattern Brush)
+  // Five tiles, each an SVG drawn as its own artwork (the whole viewBox counts, empty margins included):
+  //   side   – repeats along every side and round smooth curves, at its own proportions (never stretched over the stroke)
+  //   outer  – the corner where the path turns AWAY from the tile's top: drawn as the top-right corner of a frame whose
+  //            side tile runs left→right with its top outside — the side comes in through the LEFT edge and leaves
+  //            through the BOTTOM edge
+  //   inner  – the corner where the path turns TOWARD the top: comes in through the LEFT edge, leaves through the TOP
+  //   start / end – optional caps of an open path
+  // Tile "top" (v = 1) is the +normal side of the skeleton. Without a corner tile, the side tiles meet on the corner's
+  // bisector (mitre). Fit per side: stretch (tiles eased to end exactly at the corners), space (tiles keep their
+  // size, the slack becomes even gaps) or approx (tiles keep their size and spacing, centred; may be a hair short/long).
+  // All tiles share one texture atlas, so the shader still samples a single mask.
+  const PATTERN_CORNER = 32 * Math.PI / 180;    // a turn sharper than this is a corner
+  const PT_SLOTS = ['side', 'outer', 'inner', 'start', 'end'];
+  const PT = { side: null, outer: null, inner: null, start: null, end: null };   // { canvas, aspect, name }
+  let ptAtlas = null, ptUV = {};
+
+  // render an SVG exactly as drawn, over its full viewBox, into a white + alpha canvas
+  function renderTileSVG(text) {
+    return new Promise(resolve => {
+      text = (text || '').trim();
+      if (!/<svg[\s>]/i.test(text)) return resolve({ ok: false, msg: 'Upload or paste a whole SVG file.' });
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml'), svg = doc.querySelector('svg');
+      if (!svg || doc.querySelector('parsererror')) return resolve({ ok: false, msg: 'This SVG could not be parsed. Re-export it as plain SVG.' });
+      let vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      if (vb.length !== 4 || vb.some(isNaN)) vb = [0, 0, parseFloat(svg.getAttribute('width')) || 512, parseFloat(svg.getAttribute('height')) || 512];
+      const k = 1024 / Math.max(vb[2], vb[3]), W = Math.max(8, Math.round(vb[2] * k)), H = Math.max(8, Math.round(vb[3] * k));
+      svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', vb.join(' '));
+      svg.setAttribute('preserveAspectRatio', 'none');
+      const img = new Image();
+      img.onerror = () => resolve({ ok: false, msg: 'The browser could not draw this SVG. Try re-saving it as SVG 1.1.' });
+      img.onload = () => {
+        const c = document.createElement('canvas'); c.width = W; c.height = H;
+        const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, W, H);
+        const d = g.getImageData(0, 0, W, H), px = d.data; let seen = 0;
+        for (let i = 0; i < px.length; i += 4) { px[i] = px[i + 1] = px[i + 2] = 255; if (px[i + 3] > 127) seen++; }
+        if (!seen) return resolve({ ok: false, msg: 'Nothing visible was found in this SVG.' });
+        g.putImageData(d, 0, 0);
+        resolve({ ok: true, canvas: c, aspect: W / H });
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(svg));
+    });
+  }
+
+  // all tiles side by side in one texture; ptUV[slot] = [u0, u1] inside it
+  function buildAtlas() {
+    const tiles = PT_SLOTS.map(k => [k, PT[k] || (k === 'side' && tipCanvas ? { canvas: tipCanvas, aspect: tipAspect } : null)]).filter(t => t[1]);
+    ptUV = {}; if (!tiles.length) { ptAtlas = null; return; }
+    const pad = 8, sumA = tiles.reduce((a, [, t]) => a + Math.max(.05, t.aspect), 0);
+    const H = Math.max(64, Math.min(512, Math.floor((8000 - pad * (tiles.length + 1)) / sumA)));
+    const ws = tiles.map(([, t]) => Math.max(8, Math.round(H * Math.max(.05, t.aspect))));
+    const AW = ws.reduce((a, w) => a + w + pad, pad), c = document.createElement('canvas'); c.width = AW; c.height = H;
+    const g = c.getContext('2d'); let x = pad;
+    tiles.forEach(([k, t], i) => { g.drawImage(t.canvas, x, 0, ws[i], H); ptUV[k] = [(x + .5) / AW, (x + ws[i] - .5) / AW]; x += ws[i] + pad; });
+    const im = createImage(AW, H); im.drawingContext.drawImage(c, 0, 0); if (im.setModified) im.setModified(true);
+    ptAtlas = im;
+  }
+  async function loadPatternTile(slot, text) {
+    if (!PT_SLOTS.includes(slot)) return { ok: false, msg: 'Unknown tile.' };
+    const r = await renderTileSVG(text); if (!r.ok) return r;
+    PT[slot] = { canvas: r.canvas, aspect: r.aspect };
+    if (slot === 'side') { tipCanvas = r.canvas; tipAspect = r.aspect; tipName = 'upload'; }
+    buildAtlas();
+    return { ok: true, msg: `${slot === 'side' ? 'Side' : slot[0].toUpperCase() + slot.slice(1)} tile loaded · ${r.canvas.width}×${r.canvas.height}px` };
+  }
+  function clearPatternTile(slot) { PT[slot] = null; buildAtlas(); }
+  function patternTiles() { const o = {}; PT_SLOTS.forEach(k => o[k] = !!PT[k] || (k === 'side' && !!tipCanvas)); return o; }
+  function hasPattern() { return !!(PT.side || tipCanvas); }
+  function maskFor(P) {
+    if (P.brush !== 'custom') return null;
+    if (P.tipMode === 'pattern') { if (!ptAtlas && hasPattern()) buildAtlas(); return ptAtlas; }
+    return tipMask;
+  }
+
+  function patternGeometry(S, P, strokes) {
+    if (!ptAtlas) buildAtlas();
+    const sc = P.patternScale || 1, W = P.width * sc, half = W / 2;
+    const aspectOf = k => PT[k] ? PT[k].aspect : (k === 'side' ? tipAspect : 1);
+    const tileLen = Math.max(.01, W * aspectOf('side')), gapLen = tileLen * Math.max(-.9, P.patternSpacing || 0);   // < 0: tiles overlap (interlocking artwork)
+    const fit = P.patternFit || 'stretch', has = k => !!ptUV[k];
+    const uvOf = k => ptUV[k] || ptUV.side || [0, 1];
+    // corner method per corner type: Illustrator's auto corners, or the user's own corner tile (falls back to sliced)
+    const methodOf = outer => { const m = (outer ? P.patternOuter : P.patternInner) || 'sliced'; return m === 'custom' && !has(outer ? 'outer' : 'inner') ? 'sliced' : m; };
+    const g = new p5.Geometry(1, 1, function () {
+      const V = this.vertices, N = this.vertexNormals, U = this.uvs, F = this.faces;
+      const add = (x, y, u, v) => { V.push(new p5.Vector(x, y, .5)); N.push(new p5.Vector(0, 0, 1)); U.push(u, v); };
+      for (const [ua, ub] of strokes) {
+        const span = ub - ua, full = S.closed && Math.abs(span) >= .999;
+        const M = Math.max(16, Math.round(Math.abs(span) * S.n));
+        let pts = [];
+        for (let i = 0; i < (full ? M : M + 1); i++) { const p = sampleSpine(S, ua + span * i / M); pts.push([p.x, p.y, p.nx, p.ny]); }
+        const n = pts.length, at = i => pts[full ? ((i % n) + n) % n : clamp(i, 0, n - 1)];
+        // ---- path analysis: corners = sharp turns (local maxima); smooth curves and straight runs are left to the side tiles
+        const turn = [];
+        for (let i = 0; i < n; i++) {
+          if (!full && (i < 2 || i > n - 3)) { turn.push(0); continue; }
+          const a = at(i - 2), b = at(i), c = at(i + 2);
+          const a1 = Math.atan2(b[1] - a[1], b[0] - a[0]), a2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+          let d = Math.abs(a2 - a1); if (d > Math.PI) d = 2 * Math.PI - d; turn.push(d);
+        }
+        const corners = [];
+        for (let i = 0; i < n; i++) {
+          if (turn[i] < PATTERN_CORNER) continue;
+          let isMax = true; for (let k = -3; k <= 3; k++) if (k && turn[full ? (i + k + n) % n : clamp(i + k, 0, n - 1)] > turn[i]) isMax = false;
+          if (isMax && !corners.some(c => Math.abs(c - i) < 4)) corners.push(i);
+        }
+        let cuts;
+        if (full) {
+          if (corners.length) { const c0 = corners[0]; pts = pts.slice(c0).concat(pts.slice(0, c0)); cuts = corners.map(c => c - c0).concat([n]); pts.push(pts[0]); }
+          else { cuts = [0, n]; pts.push(pts[0]); }
+        } else cuts = [0].concat(corners, [n - 1]);
+        const isCorner = ci => full ? corners.length > 0 : (ci > 0 && ci < cuts.length - 1);
+        // ---- straight sides: the skeleton is sampled smoothly, so its corners come out a little rounded. A side that
+        // is straight in its middle is rebuilt as a true straight line, and its corners become the exact intersection
+        // of the neighbouring lines, so tiles sit square on the side and corner tiles land on the real corner.
+        const NS = cuts.length - 1, SEG = [], LINE = [];
+        for (let si = 0; si < NS; si++) {
+          const seg = pts.slice(cuts[si], cuts[si + 1] + 1); SEG.push(seg); let line = null;
+          if (seg.length >= 6) {
+            const a = seg[Math.floor(seg.length * .15)], b = seg[Math.ceil(seg.length * .85) - 1];
+            const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy);
+            if (l > 1e-4) {
+              const d = [dx / l, dy / l]; let dev = 0;
+              for (let i = Math.floor(seg.length * .15); i < Math.ceil(seg.length * .85); i++) dev = Math.max(dev, Math.abs((seg[i][0] - a[0]) * d[1] - (seg[i][1] - a[1]) * d[0]));
+              if (dev < l * .012 + 1e-4) line = { p: a, d };
+            }
+          }
+          LINE.push(line);
+        }
+        const inter = (A, B) => { const cr = A.d[0] * B.d[1] - A.d[1] * B.d[0]; if (Math.abs(cr) < .05) return null; const t = ((B.p[0] - A.p[0]) * B.d[1] - (B.p[1] - A.p[1]) * B.d[0]) / cr; return [A.p[0] + A.d[0] * t, A.p[1] + A.d[1] * t]; };
+        const proj = (L, q) => { const t = (q[0] - L.p[0]) * L.d[0] + (q[1] - L.p[1]) * L.d[1]; return [L.p[0] + L.d[0] * t, L.p[1] + L.d[1] * t]; };
+        const sidePrev = ci => ci > 0 ? ci - 1 : (full ? NS - 1 : -1), sideNext = ci => ci < NS ? ci : (full ? 0 : -1);
+        const CP = cuts.map((j, ci) => {
+          const A = LINE[sidePrev(ci)], B = LINE[sideNext(ci)];
+          if (A && B && isCorner(ci)) { const x = inter(A, B); if (x) return x; }
+          if (!isCorner(ci)) { if (B && ci === 0) return proj(B, pts[j]); if (A && ci === NS) return proj(A, pts[j]); }
+          return [pts[j][0], pts[j][1]];
+        });
+        for (let si = 0; si < NS; si++) if (LINE[si]) {
+          const A = CP[si], B = CP[si + 1], m = SEG[si][SEG[si].length >> 1], K = Math.max(8, SEG[si].length);
+          SEG[si] = Array.from({ length: K }, (_, i) => [mix(A[0], B[0], i / (K - 1)), mix(A[1], B[1], i / (K - 1)), m[2], m[3]]);
+        }
+        const P_ = i => pts[clamp(i, 0, pts.length - 1)];
+        const dir = (i0, i1) => { const a = P_(i0), b = P_(i1); const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
+        // ---- corner geometry. Tile top (v = 1) is the +spine-normal side. The two offset lines (±half) of the sides
+        // meet on the bisector at the two mitre points; `a` is how far from the corner the square-cut sides stop.
+        const cornerInfo = ci => {
+          const j = cuts[ci], sp = pts[j], o = CP[ci], LA = LINE[sidePrev(ci)], LB = LINE[sideNext(ci)];
+          const t1 = LA ? LA.d : (full && j === 0 ? dir(pts.length - 4, pts.length - 1) : dir(j - 3, j)), t2 = LB ? LB.d : dir(j, j + 3);
+          let n1 = [t1[1], -t1[0]]; const sg = (n1[0] * sp[2] + n1[1] * sp[3]) < 0 ? -1 : 1;
+          n1 = [n1[0] * sg, n1[1] * sg]; const n2 = [t2[1] * sg, -t2[0] * sg];
+          const th = Math.min(2.6, Math.acos(clamp(t1[0] * t2[0] + t1[1] * t2[1], -1, 1)));
+          const outer = n1[0] * (t2[0] - t1[0]) + n1[1] * (t2[1] - t1[1]) < 0;   // turning away from the top: the top edge is convex
+          const slot = outer ? 'outer' : 'inner', method = methodOf(outer), a = half * Math.tan(th / 2);
+          let mx = n1[0] + n2[0], my = n1[1] + n2[1]; const ml = Math.hypot(mx, my) || 1, mk = half / Math.max(.2, Math.cos(th / 2));
+          mx = mx / ml * mk; my = my / ml * mk;
+          // sliced / overlap between two straight sides: each side's tile run simply carries on into the corner and is
+          // cut there (on the bisector for sliced, square past the far edge for overlap) — the artwork stays whole
+          const clip = !!(LA && LB) && (method === 'sliced' || method === 'overlap');
+          const reserve = clip || method === 'between' ? 0 : method === 'centered' ? Math.max(a, tileLen / 2) : a;
+          return { o, t1, t2, n1, n2, th, outer, slot, method, a, reserve, clip, mitTop: [o[0] + mx, o[1] + my], mitBot: [o[0] - mx, o[1] - my] };
+        };
+        const CI = cuts.map((_, ci) => isCorner(ci) ? cornerInfo(ci) : null);
+        if (full && CI.length) CI[CI.length - 1] = CI[0];
+        // ---- a run of rows {b: bottom point, t: top point, u}; consecutive rows become quads (subdivided so the
+        // texture stays even on trapezoids such as mitred ends)
+        const rowsOut = rows => {
+          for (let r = 0; r < rows.length - 1; r++) {
+            const A = rows[r], B = rows[r + 1], K = 4, base = V.length;
+            for (let k = 0; k <= K; k++) {
+              const f = k / K, u = mix(A.u, B.u, f);
+              add(mix(A.b[0], B.b[0], f), mix(A.b[1], B.b[1], f), u, 0); add(mix(A.t[0], B.t[0], f), mix(A.t[1], B.t[1], f), u, 1);
+            }
+            for (let k = 0; k < K; k++) { const q = base + k * 2; F.push([q, q + 2, q + 1], [q + 2, q + 3, q + 1]); }
+          }
+        };
+        const off = (p, t, d, n, h) => [p[0] + t[0] * d + n[0] * h, p[1] + t[1] * d + n[1] * h];
+        const row = (p, t, d, n, u) => ({ b: off(p, t, d, n, -half), t: off(p, t, d, n, half), u });
+        const slotU = (k, f) => { const [u0, u1] = uvOf(k); return mix(u0, u1, clamp(f, 0, 1)); };
+        // ---- the corner itself, by method (Illustrator's corner options)
+        const cornerOut = C => {
+          const { o, t1, t2, n1, n2, a } = C, mit = { b: C.mitBot, t: C.mitTop };
+          if (C.clip) return;   // drawn by the two sides themselves (clipped tile runs)
+          if (C.method === 'custom') {
+            // the user's corner square: incoming cut on its left edge, the outgoing cut on its bottom (outer) / top (inner) edge
+            const c1 = row(o, t1, -a, n1, 0), c2 = row(o, t2, a, n2, 0);
+            const Q00 = c1.b, Q01 = c1.t, Q11 = C.outer ? C.mitTop : c2.b, Q10 = C.outer ? c2.t : C.mitBot;
+            const [u0, u1] = uvOf(C.slot), G = 8, base = V.length;
+            for (let i = 0; i <= G; i++) for (let j = 0; j <= G; j++) {
+              const uu = i / G, vv = j / G, w00 = (1 - uu) * (1 - vv), w10 = uu * (1 - vv), w01 = (1 - uu) * vv, w11 = uu * vv;
+              add(w00 * Q00[0] + w10 * Q10[0] + w01 * Q01[0] + w11 * Q11[0], w00 * Q00[1] + w10 * Q10[1] + w01 * Q01[1] + w11 * Q11[1], mix(u0, u1, uu), vv);
+            }
+            for (let i = 0; i < G; i++) for (let j = 0; j < G; j++) { const q = base + i * (G + 1) + j, r = q + G + 1; F.push([q, r, q + 1], [r, r + 1, q + 1]); }
+          } else if (C.method === 'sliced') {
+            // a slice of the side tile, cut on the bisector like a mitred picture frame: the incoming half carries on
+            // from where the last tile ended (tile start), the outgoing half leads into the next tile (tile end)
+            const f = a / tileLen;
+            rowsOut([row(o, t1, -a, n1, slotU('side', 0)), Object.assign({ u: slotU('side', f) }, mit)]);
+            rowsOut([Object.assign({ u: slotU('side', 1 - f) }, mit), row(o, t2, a, n2, slotU('side', 1))]);
+          } else if (C.method === 'centered') {
+            // one side tile centred on the corner, folded on the bisector
+            const r = C.reserve;
+            rowsOut([row(o, t1, -r, n1, slotU('side', 0)), Object.assign({ u: slotU('side', .5) }, mit)]);
+            rowsOut([Object.assign({ u: slotU('side', .5) }, mit), row(o, t2, r, n2, slotU('side', 1))]);
+          } else if (C.method === 'overlap') {
+            // both sides run straight on past the corner to the far edge and overlap there
+            const e = Math.min(1, (a + half) / tileLen);
+            rowsOut([row(o, t1, -a, n1, slotU('side', 0)), row(o, t1, half, n1, slotU('side', e))]);
+            rowsOut([row(o, t2, -half, n2, slotU('side', 1 - e)), row(o, t2, a, n2, slotU('side', 1))]);
+          }
+          // 'between': nothing here — the side tiles run all the way into the corner and are folded on the bisector
+        };
+        for (let si = 0; si < NS; si++) {
+          const seg = SEG[si];
+          if (seg.length < 2) continue;
+          const Ls = [0]; for (let i = 1; i < seg.length; i++) Ls.push(Ls[i - 1] + Math.hypot(seg[i][0] - seg[i - 1][0], seg[i][1] - seg[i - 1][1]));
+          const len = Ls[Ls.length - 1]; if (len < 1e-4) continue;
+          const sideN = i => {
+            const a = seg[Math.max(0, i - 2)], b = seg[Math.min(seg.length - 1, i + 2)];
+            let tx = b[0] - a[0], ty = b[1] - a[1]; const l = Math.hypot(tx, ty) || 1; let nx = ty / l, ny = -tx / l;
+            if (nx * seg[i][2] + ny * seg[i][3] < 0) { nx = -nx; ny = -ny; } return [nx, ny];
+          };
+          const cA = CI[si], cB = CI[si + 1], foldA = cA && cA.method === 'between', foldB = cB && cB.method === 'between';
+          const rA = cA ? cA.reserve : 0, rB = cB ? cB.reserve : 0;
+          const capA = !full && si === 0 && has('start'), capB = !full && si === NS - 1 && has('end');
+          const lenA = capA ? W * aspectOf('start') : 0, lenB = capB ? W * aspectOf('end') : 0;
+          const posAt = d => {   // point on the side at arc length d, with the half-width offset vector
+            let i = 1; while (i < Ls.length - 1 && Ls[i] < d) i++;
+            const t = clamp((d - Ls[i - 1]) / ((Ls[i] - Ls[i - 1]) || 1), 0, 1), a = seg[i - 1], b = seg[i];
+            const nn = sideN(t < .5 ? i - 1 : i);
+            return [mix(a[0], b[0], t), mix(a[1], b[1], t), nn[0] * half, nn[1] * half];
+          };
+          // one tile from d0 to d1: straight sides are single quads (ends folded onto the mitre at a 'between' corner),
+          // curved sides follow the curve in short rows
+          const tileOut = (d0, d1, slot) => {
+            const rows = [], straight = !!LINE[si], steps = straight ? 1 : Math.max(2, Math.ceil((d1 - d0) / (W * .25)));
+            for (let r = 0; r <= steps; r++) {
+              const d = mix(d0, d1, r / steps), u = slotU(slot, r / steps);
+              if (r === 0 && foldA && d <= 1e-6) { rows.push({ b: cA.mitBot, t: cA.mitTop, u }); continue; }
+              if (r === steps && foldB && d >= len - 1e-6) { rows.push({ b: cB.mitBot, t: cB.mitTop, u }); continue; }
+              const [x, y, ox, oy] = posAt(d); rows.push({ b: [x - ox, y - oy], t: [x + ox, y + oy], u });
+            }
+            rowsOut(rows);
+          };
+          // straight side meeting a clipped corner: tiles are cut by lines in (d, v) space — d along the side, v across
+          const straight = !!LINE[si], T0 = seg[0], TE = seg[seg.length - 1];
+          const tl0 = Math.hypot(TE[0] - T0[0], TE[1] - T0[1]) || 1, tv = [(TE[0] - T0[0]) / tl0, (TE[1] - T0[1]) / tl0], nv = sideN(0);
+          const dOf = q => (q[0] - T0[0]) * tv[0] + (q[1] - T0[1]) * tv[1];
+          const lin = (a0, a1) => v => a0 + (a1 - a0) * v;
+          const lo = straight && cA && cA.clip ? (cA.method === 'sliced' ? lin(dOf(cA.mitBot), dOf(cA.mitTop)) : () => -half) : null;
+          const hi = straight && cB && cB.clip ? (cB.method === 'sliced' ? lin(dOf(cB.mitBot), dOf(cB.mitTop)) : () => len + half) : null;
+          const at = (d, v) => [T0[0] + tv[0] * d + nv[0] * (v - .5) * W, T0[1] + tv[1] * d + nv[1] * (v - .5) * W];
+          const clipTile = (d0, d1, slot) => {
+            const L_ = v => Math.max(d0, lo ? lo(v) : -1e9), R_ = v => Math.min(d1, hi ? hi(v) : 1e9);
+            const vs = [0, 1];
+            for (const f of [lo, hi]) if (f) { const f0 = f(0), f1 = f(1); if (Math.abs(f1 - f0) > 1e-9) for (const d of [d0, d1]) { const v = (d - f0) / (f1 - f0); if (v > 1e-6 && v < 1 - 1e-6) vs.push(v); } }
+            vs.sort((x, y) => x - y);
+            const uo = d => slotU(slot, (d - d0) / ((d1 - d0) || 1));
+            for (let i = 0; i < vs.length - 1; i++) {
+              const va = vs[i], vb = vs[i + 1], vm = (va + vb) / 2; if (vb - va < 1e-6 || R_(vm) <= L_(vm)) continue;
+              const la = L_(va), ra = Math.max(la, R_(va)), lb = L_(vb), rb = Math.max(lb, R_(vb)), base = V.length;
+              for (const [d, v] of [[la, va], [ra, va], [rb, vb], [lb, vb]]) { const p = at(d, v); add(p[0], p[1], uo(d), v); }
+              F.push([base, base + 1, base + 2], [base, base + 2, base + 3]);
+            }
+          };
+          const dA = rA, dB = len - rB;
+          if (capA) tileOut(dA, dA + lenA, 'start');
+          if (capB) tileOut(dB - lenB, dB, 'end');
+          const s0 = dA + lenA, s1 = dB - lenB, L = s1 - s0;
+          if (L > W * .02) {
+            let count, tl, gp, o0 = 0;
+            if (fit === 'space') {          // tiles keep their size; the slack becomes even gaps
+              count = Math.max(1, Math.floor((L + gapLen) / (tileLen + gapLen)));
+              tl = Math.min(tileLen, L);
+              if (count > 1) gp = (L - tl) / (count - 1) - tl; else { gp = 0; o0 = (L - tl) / 2; }   // first tile at the start, last at the end
+            } else if (fit === 'approx') {  // tiles keep size and spacing, centred on the side
+              count = Math.max(1, Math.round((L + gapLen) / (tileLen + gapLen)));
+              tl = tileLen; gp = gapLen; o0 = (L - (count * tl + (count - 1) * gp)) / 2;
+            } else {                         // stretch: a whole number of tiles, eased to end exactly at the corners
+              count = Math.max(1, Math.round((L + gapLen) / (tileLen + gapLen)));
+              const k = (L + gapLen) / (count * (tileLen + gapLen)); tl = tileLen * k; gp = gapLen * k;
+            }
+            if (lo || hi) {
+              // carry the run on past each clipped end until the corner is covered, then cut every tile to the corner
+              const step = tl + gp, minLo = lo ? Math.min(lo(0), lo(1)) : 0, maxHi = hi ? Math.max(hi(0), hi(1)) : 0;
+              let k0 = 0, k1 = count - 1;
+              if (lo) while (k0 > -40 && s0 + o0 + (k0 - 1) * step + tl > minLo) k0--;
+              if (hi) while (k1 < count + 40 && s0 + o0 + (k1 + 1) * step < maxHi) k1++;
+              for (let k = k0; k <= k1; k++) { const d0 = s0 + o0 + k * step; clipTile(d0, d0 + tl, 'side'); }
+            } else
+            for (let k = 0; k < count; k++) { const d0 = s0 + o0 + k * (tl + gp); tileOut(d0, d0 + tl, 'side'); }
+          }
+        }
+        // corner pieces last, on top of the sides they join
+        const seen = new Set();
+        CI.forEach(C => { if (C && !seen.has(C)) { seen.add(C); cornerOut(C); } });
+      }
+    });
+    g.gid = 'sb-pattern-' + (gid++);
+    return g;
+  }
+
   function layerGeometry(S, P, layerIndex, seed) {
     let k = Math.max(1, Math.round(P.strokes));
     const strokes = [];
@@ -263,8 +715,9 @@ const BR = (() => {
     const B = P;
     const useTip = false;
     const W = P.width;
-    const masked = P.brush === 'custom' && !!tipMask;
+    const masked = P.brush === 'custom' && (P.tipMode === 'pattern' ? hasPattern() : !!tipMask);
     if (masked && P.tipMode === 'stamp') return stampGeometry(S, P, strokes, start, stride);
+    if (masked && P.tipMode === 'pattern') return patternGeometry(S, P, P.skeleton === 'rect' ? [[0, 1]] : strokes);
     const ribbons = P.skeleton === 'rect' ? rectRibbons(P, seed) : strokes.map(([ua, ub, s]) => {
       const span = ub - ua, M = Math.max(24, Math.round(Math.abs(span) * (S.closed ? 360 : 300)));
       const rows = [];
@@ -273,7 +726,10 @@ const BR = (() => {
         const wob = P.wobble ? (noise1(u * 9 + s, s + 3) * .7 + noise1(u * 23 + s, s + 5) * .3) * P.wobble : 0;
         const bx = p.x + p.nx * wob, by = p.y + p.ny * wob;
         const [lo, hi] = masked ? profile(Object.assign({}, B, { flareIn: 0, flareOut: 0, stepAmp: 0, bias: 0 }), t, s, p.ang, false) : profile(B, t, s, p.ang, useTip);
-        rows.push({ zf: chain ? -t * P.spacing : .5, t, ix: bx + p.nx * lo * W, iy: by + p.ny * lo * W, ox: bx + p.nx * hi * W, oy: by + p.ny * hi * W, nx: p.nx, ny: p.ny });
+        // the halftone grows from the stroke's smooth edge (no chisel step / hook), so it never jumps out with them
+        const [slo, shi] = P.halftone > 0 && !masked ? profile(Object.assign({}, B, { flareIn: 0, flareOut: 0, stepAmp: 0 }), t, s, p.ang, useTip) : [lo, hi];
+        rows.push({ zf: chain ? -t * P.spacing : .5, t, ix: bx + p.nx * lo * W, iy: by + p.ny * lo * W, ox: bx + p.nx * hi * W, oy: by + p.ny * hi * W, nx: p.nx, ny: p.ny,
+          six: bx + p.nx * slo * W, siy: by + p.ny * slo * W, sox: bx + p.nx * shi * W, soy: by + p.ny * shi * W });
       }
       return rows;
     });
@@ -302,6 +758,7 @@ const BR = (() => {
       }
     });
     g.gid = 'sb-brush-' + (gid++);
+    g.extra = P.halftone > 0 && !masked ? halftoneDots(ribbons, P) : [];
     g.worldZ = chain;   // chained strokes carry real depth (world units) instead of a unit extrusion
     return g;
   }
@@ -605,6 +1062,6 @@ const BR = (() => {
 
   return {
     LIBRARY, BRUSH_KEYS, buildSpine, layerGeometry, loadSpine, selectSpine, spineInfo, loadTip, selectTip, tipInfo,
-    isChained, chainLink, TIPS, setBuiltinTip, currentTip: () => tipName, hasSpine: () => !!customSpine, hasTip: () => !!tipMask, tipFitted: () => !!tipFit, tipMask: () => tipMask, loadTipRaster, drawSpinePreview, drawBrushPreview,
+    isChained, chainLink, TIPS, setBuiltinTip, currentTip: () => tipName, hasSpine: () => !!customSpine, hasTip: () => !!tipMask, tipFitted: () => !!tipFit, tipMask: () => tipMask, loadTipRaster, loadPatternTile, clearPatternTile, patternTiles, hasPattern, maskFor, patternUV: () => ptUV, patternGeometry, spineFrom: (pts, closed) => makeSpine(resample(pts, 720, closed), closed), drawSpinePreview, drawBrushPreview,
   };
 })();

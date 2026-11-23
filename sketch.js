@@ -15,6 +15,8 @@ colorScheme.unshift(
   { name: 'SB Ember',      colors: ['#1c0710', '#7a00a6', '#ff5a36', '#ffb347', '#f2dbbd'] },
   { name: 'SB Void mono',  colors: ['#020926', '#6f16a0'] },
   { name: 'SB Lilac mono', colors: ['#a490ff', '#b4a4fc'] },
+  { name: 'SB Lilac white', colors: ['#a490ff', '#ffffff'] },   // brand assets: white paint on lilac
+  { name: 'SB Banner',     colors: ['#4b2d8f', '#b9b2de'] },   // brand banners: pale lilac paint on deep violet
   // edition palettes
   { name: 'SB Sci-fi',     colors: ['#04060d', '#00e5ff', '#ff2bd6', '#3a5cff', '#d9fbff'] },
   { name: 'SB Wind',       colors: ['#dcebe5', '#ffffff', '#9fd8c8', '#5fb3a1', '#c4e3d8'] },
@@ -24,11 +26,11 @@ colorScheme.unshift(
   { name: 'SB Thunder',    colors: ['#0c0a1e', '#ffe14d', '#a490ff', '#fff7c2', '#5b1fe0'] },
 );
 
-const FORMATS = { '4:5': [800, 1000], 'card': [720, 1006], '1:1': [900, 900], '9:16': [720, 1280] };
+const FORMATS = { '4:5': [800, 1000], 'card': [720, 1006], '1:1': [900, 900], '9:16': [720, 1280], 'banner': [400, 1600], '16:9': [1280, 720] };
 
 const BASE = {
   // skeleton (khung xương): the spine every stroke follows
-  skeleton: 'ring', shape: 'squircle', sides: 6, soften: .4, roundness: 2, archH: 1.2, petals: 5, petalAmp: .16, aspect: .9, shapeRot: 0,
+  skeleton: 'ring', shape: 'squircle', sides: 6, soften: .4, roundness: 2, aspect: .9, shapeRot: 0,
   spiralTurns: 1.4, spiralTighten: .55,
   strokes: 2, gap: .1, coverage: .9, covJitter: .1, startDrift: .17, startJitter: .15, wobble: .012,
   // link: 'separate' rings, or 'chain' — each stroke's tail meets the next deeper stroke's head (one vortex)
@@ -37,8 +39,9 @@ const BASE = {
   rectMode: 'L', rectTaper: 1.1, rectTip: .03, rectOver: .45, rectHook: .35, rectGap: 0, rectJitter: .02,
   // brush: how paint is laid along the spine (defaults = "Tapered ink")
   brush: 'taper', width: .15, taperIn: .35, taperOut: .45, swell: .15, flareIn: 0, flareOut: 0,
-  stepAmp: 0, stepPos: .3, stepLen: .25, stepJitter: .5, stepSide: 1, pressure: .1, nibAmt: 0, nibAngle: 35, bias: 0,
-  tipMode: 'stamp', stampPlace: 'centre', stampPivot: 'auto', stampSize: 1,   // tip brush (uploaded SVG or built-in)
+  stepAmp: 0, stepPos: .3, stepLen: .25, stepJitter: .5, stepSide: 1, stepBarb: 0, stepFacets: 0, thornAmp: 0, thornCount: 6, thornSide: 1, pressure: .1, nibAmt: 0, nibAngle: 35, bias: 0,
+  halftone: 0, halftoneDot: .012, halftoneAngle: 45,   // halftone dot band beside the stroke (0 = off)
+  tipMode: 'stamp', stampPlace: 'centre', stampPivot: 'auto', stampSize: 1, patternScale: 1, patternFit: 'stretch', patternSpacing: 0, patternOuter: 'sliced', patternInner: 'sliced',   // tip brush (uploaded SVG or built-in)
   tipSource: 'upload', widthProfile: 'custom', theme: 'none',
   scatterSpacing: .12, scatterSize: .12, scatterSizeJit: .4, scatterRotJit: .2, scatterOffset: .03, scatterAlign: true, scatterByWidth: true,
   // brush texture (shader)
@@ -55,6 +58,9 @@ const BASE = {
   ambient: 1, diffuse: 0, fog: .6, fogNear: 600, fogFar: 5000,
   // portal opening (plays on preset / summon / click on the frame)
   introOn: true, introDur: 1.1, introFade: .16, introSpin: .7, introStagger: .6, introScale: 1, introDepth: 5, introBounce: 1, introAlternate: false,
+  // motion banner (banner.js): text / logo animated over the portal, timed from the portal opening
+  bannerMode: 'off', bannerText: 'Go\nstep\nbeyond\nthe\nordinary', bannerSize: .16, bannerPanel: .5, bannerShift: .22,
+  bannerDelay: .6, bannerPos: 'center', bannerPlate: true, bannerLogo: true, bannerLogoSize: .3, bannerLogoTint: true,
   // colour
   palette: 'SB Void', skipBg: true, seed: 7,
 };
@@ -99,32 +105,58 @@ const LAYOUT_DEFAULTS = {
 const HIDDEN_LAYOUTS = ['corridor', 'row'];
 
 const PRESETS_ALL = [
-  { name: 'Chained vortex', p: Object.assign(brushOf('chisel'), { link: 'chain', tailGap: 0, skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: .92, coverage: .75, width: .085, stepAmp: 1.4, stepPos: .78, stepLen: .2, stepJitter: 0, bias: .4, taperIn: .03, taperOut: .03, count: 16, spacing: 330, length: 0, radius: 250, twist: 6, camZ: 700, steps: 0, fog: .25, fogFar: 6000, fly: .9, palette: 'SB Void mono', skipBg: true, seed: 81 }) },
-  { name: 'Open rings', p: Object.assign(brushOf('chisel'), { link: 'separate', skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: .94, coverage: .93, covJitter: .04, startDrift: .37, startJitter: .04, wobble: 0, strokes: 1, width: .1, stepAmp: 1.3, stepPos: .1, stepLen: .22, stepJitter: .4, bias: .4, count: 14, spacing: 260, length: 0, radius: 250, twist: 0, steps: 0, fog: .25, fogFar: 6000, fly: .9, palette: 'SB Void mono', skipBg: true, seed: 82 }) },
+  { name: 'Chained vortex', p: Object.assign(brushOf('chisel'), { link: 'chain', tailGap: 0, skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: 1, coverage: .75, width: .085, stepAmp: 1.4, stepPos: .78, stepLen: .2, stepJitter: 0, bias: .4, taperIn: .03, taperOut: .03, count: 16, spacing: 330, length: 0, radius: 250, twist: 6, camZ: 700, steps: 0, fog: .25, fogFar: 6000, fly: .9, palette: 'SB Void mono', skipBg: true, seed: 81 }) },
+  { name: 'Open rings', p: Object.assign(brushOf('chisel'), { link: 'separate', skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: 1, coverage: .93, covJitter: .04, startDrift: .37, startJitter: .04, wobble: 0, strokes: 1, width: .1, stepAmp: 1.3, stepPos: .1, stepLen: .22, stepJitter: .4, bias: .4, count: 14, spacing: 260, length: 0, radius: 250, twist: 0, steps: 0, fog: .25, fogFar: 6000, fly: .9, palette: 'SB Void mono', skipBg: true, seed: 82 }) },
   // Chevron rise — linear, rising from below (rules approved by the CD, 2026-10-23)
-  { name: 'Chevron rise', p: { skeleton: 'ring', shape: 'polygon', sides: 4, soften: 0, roundness: 2, archH: 1.2, petals: 5, petalAmp: 0.16, aspect: 1, shapeRot: 0, spiralTurns: 1.4, spiralTighten: 0.55, strokes: 1, gap: 0.1, coverage: 0.5, covJitter: 0, startDrift: 0, startJitter: 0, wobble: 0, link: 'separate', tailGap: 0, chainDir: 1, brush: 'chisel', width: 0.036, taperIn: 0.3, taperOut: 0.02, swell: 0, flareIn: 0, flareOut: 0, stepAmp: 3.2, stepPos: 0.03, stepLen: 0.79, stepJitter: 0, stepSide: -1, pressure: 0, nibAmt: 0, nibAngle: 35, bias: 0, tipMode: 'stamp', stampPlace: 'centre', stampPivot: 'centre', stampSize: 1, bristles: 0, dry: 0, rough: 0, streak: 0, paintOn: 0, wallShade: 0.6, layout: 'tunnel', axisYaw: 0, axisPitch: 0, rowAngle: 0, rowDepth: -900, pathAmp: 220, pathFreq: 0.5, pathSpeed: 0.2, pathRound: 0, count: 11, spacing: 430, length: 0, radius: 300, curveX: 0, curveY: 0, depthMode: 'geometric', geoRatio: 0.65, geoNear: 60, camZ: 700, fov: 50, lookX: 0, lookY: 0, vpX: -0.29, vpY: 0.62, nearClip: 200, fly: 0.9, breathe: 0, breatheLength: 0, twist: 0, spin: 0, breakDrift: 0, gradType: 0, animType: 5, gradSpeed: 1.2, angle: 90, gScale: 1, stripes: 8, stripeTwist: 2, steps: 0, ambient: 0.94, diffuse: 0, fog: 0.2, fogNear: 600, fogFar: 6000, introOn: true, introDur: 1.1, introFade: 0.16, introSpin: 0.15, introStagger: 0.5, introScale: 1, introBounce: 1, introAlternate: false, palette: 'SB Void mono', skipBg: true, seed: 91 } },
+  { name: 'Chevron rise', p: { skeleton: 'ring', shape: 'polygon', sides: 4, soften: 0, roundness: 2, aspect: 1, shapeRot: 0, spiralTurns: 1.4, spiralTighten: 0.55, strokes: 1, gap: 0.1, coverage: 0.5, covJitter: 0, startDrift: 0, startJitter: 0, wobble: 0, link: 'separate', tailGap: 0, chainDir: 1, brush: 'chisel', width: 0.036, taperIn: 0.3, taperOut: 0.02, swell: 0, flareIn: 0, flareOut: 0, stepAmp: 3.2, stepPos: 0.03, stepLen: 0.79, stepJitter: 0, stepSide: -1, pressure: 0, nibAmt: 0, nibAngle: 35, bias: 0, tipMode: 'stamp', stampPlace: 'centre', stampPivot: 'centre', stampSize: 1, bristles: 0, dry: 0, rough: 0, streak: 0, paintOn: 0, wallShade: 0.6, layout: 'tunnel', axisYaw: 0, axisPitch: 0, rowAngle: 0, rowDepth: -900, pathAmp: 220, pathFreq: 0.5, pathSpeed: 0.2, pathRound: 0, count: 11, spacing: 430, length: 0, radius: 300, curveX: 0, curveY: 0, depthMode: 'geometric', geoRatio: 0.65, geoNear: 60, camZ: 700, fov: 50, lookX: 0, lookY: 0, vpX: -0.29, vpY: 0.62, nearClip: 200, fly: 0.9, breathe: 0, breatheLength: 0, twist: 0, spin: 0, breakDrift: 0, gradType: 0, animType: 5, gradSpeed: 1.2, angle: 90, gScale: 1, stripes: 8, stripeTwist: 2, steps: 0, ambient: 0.94, diffuse: 0, fog: 0.2, fogNear: 600, fogFar: 6000, introOn: true, introDur: 1.1, introFade: 0.16, introSpin: 0, introStagger: 0.5, introScale: 1, introBounce: 1, introAlternate: false, palette: 'SB Void mono', skipBg: true, seed: 91 } },
   // Rect frames — each frame is two L brushes (thick at top-left and bottom-right, sharp at the other corners)
   { name: 'Rect corridor', p: Object.assign(brushOf('marker'), { skeleton: 'rect', aspect: .78, shapeRot: 0, rectMode: 'L', rectTaper: 1.1, rectTip: .03, rectOver: .3, rectHook: .5, rectGap: 0, rectJitter: .02, width: .15, bias: -.5, pressure: 0, rough: 0, wobble: 0, ambient: 1,
-      count: 10, depthMode: 'geometric', geoRatio: .72, geoNear: 150, spacing: 400, length: 0, radius: 300, twist: 0, camZ: 700, fov: 50, vpX: 0, vpY: -.04, nearClip: 60,
+      count: 11, depthMode: 'geometric', geoRatio: .72, geoNear: 150, spacing: 400, length: 0, radius: 300, twist: 0, camZ: 700, fov: 50, vpX: 0, vpY: -.04, nearClip: 60,
       steps: 0, fog: .15, fogFar: 6000, fly: .7, palette: 'SB Lilac mono', skipBg: true, introSpin: .1, introStagger: .5, seed: 101 }) },
   { name: 'Rect twist', p: Object.assign(brushOf('marker'), { skeleton: 'rect', aspect: .85, shapeRot: 0, rectMode: 'L', rectTaper: 1.1, rectTip: .03, rectOver: .3, rectHook: .5, rectGap: 0, rectJitter: .015, width: .15, bias: -.5, pressure: 0, rough: 0, wobble: 0, ambient: 1,
-      count: 10, depthMode: 'geometric', geoRatio: .72, geoNear: 150, spacing: 400, length: 0, radius: 320, twist: -9, camZ: 700, fov: 50, vpX: -.02, vpY: -.04, nearClip: 60,
+      count: 11, depthMode: 'geometric', geoRatio: .72, geoNear: 150, spacing: 400, length: 0, radius: 320, twist: -9, camZ: 700, fov: 50, vpX: -.02, vpY: -.04, nearClip: 60,
       steps: 0, fog: .15, fogFar: 6000, fly: .7, palette: 'SB Lilac mono', skipBg: true, introSpin: .3, introStagger: .5, seed: 102 }) },
   { name: 'Ink portal', p: { bristles: 10, dry: .15, streak: .25, rough: .25, paintOn: .2 } },
-  { name: 'Arch chisel', p: Object.assign(brushOf('chisel'), { skeleton: 'ring', shape: 'arch', archH: 1.3, soften: .3, aspect: 1, coverage: .66, covJitter: .12, startDrift: 0, startJitter: .08, width: .1, count: 14, spacing: 320, length: 220, radius: 260, twist: 0, steps: 3, fog: .85, fogFar: 4200, lookY: 60, fly: .9, palette: 'SB Void', skipBg: true, seed: 11 }) },
   { name: 'Eye hook', p: Object.assign(brushOf('hook'), { skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: .78, coverage: .84, covJitter: .04, startDrift: .5, startJitter: .04, width: .1, count: 12, spacing: 330, length: 110, radius: 250, twist: 3, wallShade: .88, gradType: 9, stripes: 2, stripeTwist: 2, animType: 1, gradSpeed: .5, steps: 2, fog: .55, fly: 1, palette: 'SB Lilac', seed: 22 }) },
   { name: 'Hook spiral', p: Object.assign(brushOf('hook'), { skeleton: 'spiral', spiralTurns: 1.25, spiralTighten: .5, aspect: .92, coverage: 1, covJitter: 0, startJitter: 0, width: .1, flareIn: 0, count: 12, spacing: 300, length: 110, radius: 260, twist: 30, wallShade: .88, steps: 2, fog: .55, fly: 1.1, palette: 'SB Lilac', seed: 33 }) },
   { name: 'Frame taper', p: Object.assign(brushOf('taper'), { skeleton: 'ring', shape: 'squircle', roundness: 10, aspect: .8, coverage: .97, covJitter: .02, startDrift: .12, startJitter: .03, width: .08, taperIn: .04, taperOut: .55, swell: 0, rough: 0, count: 16, spacing: 280, length: 160, radius: 240, twist: 10, steps: 4, fog: .7, fogFar: 4500, fly: 1.2, palette: 'SB Nightglass', skipBg: true, seed: 44 }) },
   { name: 'Dry vortex', p: Object.assign(brushOf('bristle'), { skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: 1, strokes: 3, gap: .14, coverage: 1, covJitter: 0, startDrift: .07, startJitter: .1, wobble: .02, width: .22, count: 16, spacing: 260, length: 0, radius: 250, twist: 14, steps: 0, gradType: 0, angle: 0, fog: .8, fogFar: 4200, paintOn: .35, fly: 1.3, palette: 'SB Void', skipBg: true, seed: 55 }) },
   { name: 'Sumi gate', p: Object.assign(brushOf('sumi'), { skeleton: 'ring', shape: 'polygon', sides: 6, soften: .55, aspect: 1, strokes: 2, gap: .12, coverage: .95, startDrift: .09, startJitter: .2, wobble: .025, width: .3, count: 14, spacing: 300, length: 0, radius: 250, twist: 8, steps: 0, gradType: 1, fog: .75, fogFar: 4500, paintOn: .25, fly: 1, palette: 'SB Arcana', skipBg: true, seed: 66 }) },
-  { name: 'Nib rune', p: Object.assign(brushOf('nib'), { skeleton: 'ring', shape: 'star', petals: 6, petalAmp: .15, aspect: 1, coverage: .9, startDrift: .33, startJitter: .05, width: .2, count: 16, spacing: 280, length: 90, radius: 250, twist: 6, gradType: 4, animType: 2, gradSpeed: .6, steps: 3, fog: .8, fogFar: 4200, fly: 1.2, palette: 'SB Arcana', skipBg: true, seed: 77 }) },
   { name: 'Linear corridor', p: { layout: 'corridor', axisYaw: 28, axisPitch: -10, camZ: 1800, count: 22, spacing: 240, length: 480, radius: 280, fly: 1.3, fog: .55, fogNear: 1500, fogFar: 7000, seed: 61 } },
   { name: 'Linear row', p: { layout: 'row', rowAngle: -18, rowDepth: -1500, camZ: 1300, count: 16, spacing: 430, length: 300, radius: 190, fly: .7, fog: .75, fogFar: 3600, palette: 'SB Void', seed: 62 } },
   { name: 'Helix brush', p: Object.assign(brushOf('bristle'), { layout: 'helix', pathAmp: 100, pathFreq: .35, pathSpeed: .2, camZ: 1100, skeleton: 'ring', shape: 'polygon', sides: 5, soften: .5, aspect: 1, coverage: .9, startDrift: .2, width: .2, count: 24, spacing: 200, length: 0, radius: 240, twist: 10, gradType: 4, animType: 2, gradSpeed: .8, steps: 0, fly: 1.8, fog: .75, fogFar: 4200, palette: 'SB Nightglass', skipBg: true, seed: 63 }) },
   { name: 'Wave ribbon', p: Object.assign(brushOf('nib'), { layout: 'wave', axisYaw: 30, axisPitch: -8, pathAmp: 280, pathFreq: .35, pathSpeed: .25, pathRound: 0, camZ: 2200, skeleton: 'ring', shape: 'squircle', roundness: 2, aspect: 1, coverage: .8, startDrift: .1, width: .24, count: 22, spacing: 230, length: 140, radius: 200, steps: 4, fly: 1.4, fog: .6, fogNear: 1200, fogFar: 6500, palette: 'SB Arcana', skipBg: true, seed: 64 }) },
 ];
+// Chevron halftone — Chevron rise whose outer edge dissolves outward into a halftone screen:
+// light paint on a darker ground, like the brand halftone posters (white on lilac)
+{
+  const chev = PRESETS_ALL.find(p => p.name === 'Chevron rise');
+  PRESETS_ALL.splice(PRESETS_ALL.indexOf(chev) + 1, 0, { name: 'Chevron halftone', p: Object.assign({}, chev.p, {
+    halftone: 3, halftoneDot: .012, halftoneAngle: 45, palette: 'SB Lilac white', fog: 0, seed: 92 }) });
+}
+// Brand reference sheets, round 2 (white paint on lilac): barbed steps, faceted steps, step frames and thorns.
+// Each one starts from the closest existing style and swaps in the brush seen in the reference.
+{
+  const from = (name, brush, o) => Object.assign({}, PRESETS_ALL.find(p => p.name === name).p, brush ? brushOf(brush) : {},
+    { palette: 'SB Lilac white', fog: 0, steps: 0, gradType: 0 }, o);
+  PRESETS_ALL.push(
+    // a thin ring that steps up into a thick section; the step's front is a hooked barb
+    { name: 'Barb rings', p: from('Open rings', 'barb', { coverage: .85, covJitter: .05, startDrift: .31, count: 11, spacing: 420, width: .05, stepBarb: 1.6, seed: 111 }) },
+    { name: 'Barb spiral', p: from('Chained vortex', 'barb', { width: .06, stepAmp: 2.8, stepBarb: 1.6, stepPos: .35, stepLen: .65, coverage: .5, count: 11, spacing: 420, twist: 30, seed: 112 }) },   // half-turn links + strong twist = one clear spiral
+    { name: 'Barb arch', p: from('Open rings', 'barb', { coverage: .58, gap: 0, covJitter: 0, startDrift: 0, startJitter: 0, vpY: .18, depthMode: 'geometric', geoRatio: .67, count: 11, spacing: 420, width: .05, stepBarb: 1.6, stepPos: .55, stepLen: .45, stepJitter: 0, twist: 0, fly: .9, introSpin: 0, introStagger: .8, seed: 113 }) },
+    // the thick section's outer edge runs in straight facets round the circle
+    { name: 'Facet rings', p: from('Open rings', 'barb', { stepBarb: 0, stepFacets: 9, stepAmp: 3, coverage: .9, startDrift: .31, count: 11, spacing: 420, width: .04, seed: 114 }) },
+    { name: 'Facet arch', p: from('Open rings', 'barb', { stepBarb: 0, stepFacets: 9, stepAmp: 3, coverage: .58, gap: 0, covJitter: 0, startDrift: 0, startJitter: 0, vpY: .18, depthMode: 'geometric', geoRatio: .67, count: 11, spacing: 420, width: .04, stepPos: .5, stepLen: .5, stepJitter: 0, twist: 0, fly: .9, introSpin: 0, introStagger: .8, seed: 115 }) },
+    // upright frames / chevrons with a raised step along one side
+    { name: 'Step frames', p: from('Chevron rise', null, { shapeRot: 45, aspect: .82, coverage: .97, vpX: 0, vpY: 0, width: .035, stepAmp: 3.5, stepPos: .4, stepLen: .45, stepJitter: .2, count: 12, spacing: 330, soften: .08, seed: 116 }) },
+    { name: 'Step chevron', p: from('Chevron rise', null, { soften: .15, stepAmp: 2, stepPos: .5, stepLen: .5, width: .07, seed: 117 }) },
+    // hooked thorns along the outer edge
+    { name: 'Thorn chevron', p: from('Chevron rise', 'thorn', { width: .045, thornAmp: 4, thornCount: 7, thornSide: -1, coverage: .5, stepAmp: 0, taperIn: 0, taperOut: 0, seed: 118 }) },
+    { name: 'Thorn vortex', p: from('Chained vortex', 'thorn', { width: .3, thornAmp: 1.1, thornCount: 4, thornSide: 0, taperIn: .2, taperOut: .55, twist: 16, count: 11, spacing: 520, seed: 119 }) },
+  );
+}
 // Presets hidden from the chip bar for now (definitions kept). Remove a name to bring it back.
-const HIDDEN_PRESETS = ['Wave ribbon', 'Helix brush', 'Nib rune', 'Frame taper', 'Hook spiral', 'Ink portal', 'Eye hook', 'Arch chisel'];
+const HIDDEN_PRESETS = ['Wave ribbon', 'Helix brush', 'Frame taper', 'Hook spiral', 'Ink portal', 'Eye hook', 'Dry vortex', 'Sumi gate'];
 const PRESETS = PRESETS_ALL.filter(p => !HIDDEN_LAYOUTS.includes(p.p.layout) && !HIDDEN_PRESETS.includes(p.name));
 
 let PARAMS = Object.assign({}, BASE, (PRESETS[0] || { p: {} }).p);
@@ -150,6 +182,23 @@ function setup() {
   GUI.build();
   fitStage();
   if (PARAMS.introOn) PARAMS.introStart = 0;
+  setTimeout(() => GUI.setThumbs(renderThumbs()), 0);
+  Banner.ready();
+}
+
+// One still frame of every style for the style cards (rendered once, on the main canvas, then the live look is restored).
+function renderThumbs() {
+  const keep = PARAMS, keepClock = clock, out = [];
+  const off = document.createElement('canvas'); off.width = 128; off.height = 160;
+  const g = off.getContext('2d');
+  for (const p of PRESETS) {
+    PARAMS = presetParams(p.p); PARAMS.introStart = null; needGeo = needMotif = true; clock = 3;
+    redraw();
+    g.drawImage(drawingContext.canvas, 0, 0, off.width, off.height);
+    out.push(off.toDataURL('image/jpeg', .85));
+  }
+  PARAMS = keep; clock = keepClock; needGeo = needMotif = true; redraw();
+  return out;
 }
 
 function rebuild() {
@@ -158,7 +207,7 @@ function rebuild() {
     randomSeed(PARAMS.seed);
     PARAMS.bgHex = palette.colors[0];
     PARAMS.wallColors = (PARAMS.skipBg && palette.colors.length > 1) ? palette.colors.slice(1) : palette.colors.slice();
-    if (motif) motif.elements.forEach(el => el.geo && typeof freeGeometry === 'function' && freeGeometry(el.geo));
+    if (motif) motif.elements.forEach(el => { if (el.geo && typeof freeGeometry === 'function') { (el.geo.extra || []).forEach(g => freeGeometry(g)); freeGeometry(el.geo); } });
     motif = new Motif(PARAMS);
     needMotif = false; needGeo = true;
   }
@@ -176,11 +225,12 @@ function draw() {
   // while the camera keeps looking straight down the tunnel, so every layer stays square-on and keeps its true angles.
   {
     const near = 1, top = near * Math.tan(PARAMS.fov * PI / 360), right = top * width / height;
-    const sx = 2 * PARAMS.vpX, sy = -2 * PARAMS.vpY;   // WebGL y points up; vpY > 0 moves the vanishing point down
+    const sx = 2 * PARAMS.vpX, sy = -2 * (PARAMS.vpY + Banner.vpShift(PARAMS, clock));   // WebGL y points up; vpY > 0 moves the vanishing point down; the drop banner slides the tunnel down
     frustum(-right * (1 + sx), right * (1 - sx), -top * (1 + sy), top * (1 - sy), near, 30000);
   }
   camera(0, 0, PARAMS.camZ, PARAMS.lookX, PARAMS.lookY, PARAMS.camZ - 1000, 0, 1, 0);
   motif.run(PARAMS, clock);
+  Banner.draw(PARAMS, clock);
   if (wantPNG) { wantPNG = false; cnv.elt.toBlob(b => b && GUI.showPNG(b), 'image/png'); }
 }
 
@@ -201,12 +251,12 @@ function setFormat(f) {
 
 // ---------------------------------------------------------------- variants
 // Rules that change stroke geometry (texture rules only touch the shader)
-const SKELETON_KEYS = ['skeleton', 'shape', 'sides', 'soften', 'roundness', 'archH', 'petals', 'petalAmp', 'aspect', 'shapeRot',
+const SKELETON_KEYS = ['skeleton', 'shape', 'sides', 'soften', 'roundness', 'aspect', 'shapeRot',
   'spiralTurns', 'spiralTighten', 'strokes', 'gap', 'coverage', 'covJitter', 'startDrift', 'startJitter', 'wobble'];
 const BRUSH_KEYS = ['brush', 'width', 'taperIn', 'taperOut', 'swell', 'flareIn', 'flareOut', 'stepAmp', 'stepPos', 'stepLen', 'stepJitter', 'stepSide',
-  'pressure', 'nibAmt', 'nibAngle', 'bias', 'bristles', 'dry', 'rough', 'streak', 'tipMode', 'stampPlace', 'stampPivot', 'stampSize',
+  'pressure', 'nibAmt', 'nibAngle', 'bias', 'bristles', 'dry', 'rough', 'streak', 'tipMode', 'stampPlace', 'stampPivot', 'stampSize', 'stepBarb', 'stepFacets', 'thornAmp', 'thornCount', 'thornSide', 'patternScale', 'patternFit', 'patternSpacing', 'patternOuter', 'patternInner',
   'rectMode', 'rectTaper', 'rectTip', 'rectOver', 'rectHook', 'rectGap', 'rectJitter', 'tipSource', 'widthProfile',
-  'scatterSpacing', 'scatterSize', 'scatterSizeJit', 'scatterRotJit', 'scatterOffset', 'scatterAlign', 'scatterByWidth'];
+  'halftone', 'halftoneDot', 'halftoneAngle', 'scatterSpacing', 'scatterSize', 'scatterSizeJit', 'scatterRotJit', 'scatterOffset', 'scatterAlign', 'scatterByWidth'];
 const GEO_KEYS = SKELETON_KEYS.concat(BRUSH_KEYS, ['length', 'seed', 'link', 'tailGap', 'chainDir', 'spacing', 'twist', 'count', 'layout', 'depthMode']);
 const MOTIF_KEYS = ['count', 'palette', 'skipBg', 'seed'];
 
@@ -214,6 +264,10 @@ function setParam(k, v) {
   PARAMS[k] = v;
   if (k === 'layout' && LAYOUT_DEFAULTS[v]) Object.assign(PARAMS, LAYOUT_DEFAULTS[v]);
   if (k === 'brush' && BR.LIBRARY[v]) Object.assign(PARAMS, brushOf(v));
+  // public panel: a stroke may be sharp at ONE end only (the brand strokes start or finish on a point, never both)
+  if (k === 'brush' && !GUI.DEV && PARAMS.taperIn > .02 && PARAMS.taperOut > .02) PARAMS.taperIn = 0;
+  // public panel has no built-in tip artwork (dots, stars, bats…): a custom brush always means the user's own upload
+  if (k === 'brush' && v === 'custom' && !GUI.DEV) PARAMS.tipSource = 'upload';
   if (k === 'widthProfile' && WIDTH_PROFILES[v]) Object.assign(PARAMS, WIDTH_PROFILES[v].p);
   if (['taperIn', 'taperOut', 'swell'].includes(k)) PARAMS.widthProfile = 'custom';
   if (k === 'tipSource' && v !== 'upload') { PARAMS.brush = 'custom'; BR.setBuiltinTip(v); }
@@ -222,10 +276,17 @@ function setParam(k, v) {
 }
 // "Lock skeleton + brush" keeps these when switching presets or summoning
 const SHAPE_KEYS = SKELETON_KEYS.concat(BRUSH_KEYS);
+const BANNER_KEYS = ['bannerMode', 'bannerText', 'bannerSize', 'bannerPanel', 'bannerShift', 'bannerDelay', 'bannerPos', 'bannerPlate', 'bannerLogo', 'bannerLogoSize', 'bannerLogoTint'];
 function applyPreset(p, keepShape) {
   const keep = {};
   if (keepShape) SHAPE_KEYS.forEach(k => keep[k] = PARAMS[k]);
   const intro = { introOn: PARAMS.introOn };
+  // the banner (text, logo, timing) belongs to the user's layout, not to the style: keep it when the style changes
+  BANNER_KEYS.forEach(k => intro[k] = PARAMS[k]);
+  // halftone the user dialled in stays on when the style changes (unless the new style sets its own)
+  if (p.halftone === undefined && (PARAMS.halftone !== DEFAULTS_NOW.halftone || PARAMS.halftoneDot !== DEFAULTS_NOW.halftoneDot)) {
+    intro.halftone = PARAMS.halftone; intro.halftoneDot = PARAMS.halftoneDot;
+  }
   PARAMS = Object.assign(presetParams(p), keep, intro);
   needGeo = needMotif = true;
   snapshotDefaults();
@@ -234,9 +295,13 @@ function applyPreset(p, keepShape) {
 // values the sliders reset to (double-click): the preset as it was loaded, plus any edition theme
 let DEFAULTS_NOW = Object.assign({}, PARAMS);
 function snapshotDefaults() { DEFAULTS_NOW = Object.assign({}, PARAMS); }
+const THEME_TEXTURE_KEYS = ['bristles', 'dry', 'rough', 'streak', 'wobble', 'pressure', 'paintOn'];
 function applyTheme(id) {
   const th = THEMES.find(t => t.id === id); if (!th) return;
-  Object.assign(PARAMS, th.p, { theme: id });
+  // the public panel keeps the brand's clean brush: an edition only changes colour and light, never the texture
+  const p = Object.assign({}, th.p);
+  if (!GUI.DEV) THEME_TEXTURE_KEYS.forEach(k => delete p[k]);
+  Object.assign(PARAMS, p, { theme: id });
   needGeo = needMotif = true; snapshotDefaults();
   if (PARAMS.introOn) openPortal();
 }
@@ -250,9 +315,9 @@ function summon(lockShape, lockColor) {
   const n = { seed: Math.floor(r(1, 99999)) };
   if (!lockShape) {
     n.skeleton = pick(['ring', 'ring', 'ring', 'spiral'].concat(BR.hasSpine() ? ['path'] : []));
-    n.shape = pick(['polygon', 'squircle', 'squircle', 'arch', 'star']);
+    n.shape = pick(['polygon', 'squircle', 'squircle']);
     n.sides = Math.round(r(3, 8)); n.soften = pick([0, r(.2, .7)]); n.roundness = pick([2, r(3, 6), r(8, 14)]);
-    n.archH = r(.9, 1.5); n.petals = Math.round(r(3, 8)); n.petalAmp = r(.08, .22); n.aspect = r(.75, 1.05);
+    n.aspect = r(.75, 1.05);
     n.shapeRot = n.shape === 'polygon' && n.sides === 4 ? pick([0, 45]) : 0;
     n.spiralTurns = r(.8, 2); n.spiralTighten = r(.3, .7);
     n.strokes = pick([1, 1, 1, 2, 3]); n.gap = r(.05, .2);
@@ -296,5 +361,5 @@ function keyPressed(e) {
   if (e && e.target && e.target.matches && e.target.matches('input,textarea,select')) return;
   if (key === ' ') { playing = !playing; GUI.sync(); return false; }
   if (key === 'o' || key === 'O') openPortal();
-  if (key === 'h' || key === 'H') document.body.classList.toggle('hide-panel'), fitStage();
+  if (key === 'h' || key === 'H') { const on = document.body.classList.toggle('hide-panel'); const t = document.getElementById('uiToggle'); if (t) t.checked = !on; fitStage(); }
 }

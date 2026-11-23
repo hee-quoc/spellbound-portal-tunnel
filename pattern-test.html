@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pattern Brush · test paths</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  :root { --ink: #4b2d8f; --line: #e5e3ee; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 13px/1.4 Inter, system-ui, sans-serif; color: #1d1a2b; background: #f6f5fa; }
+  header { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center; padding: 14px 20px; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  h1 { font-size: 15px; margin: 0 8px 0 0; }
+  label { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+  select, input[type=range] { font: inherit; }
+  .btn { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #1d1a2b; color: #fff; cursor: pointer; font-weight: 600; border: 0; }
+  .btn.soft { background: #ece9f6; color: #1d1a2b; }
+  output { min-width: 32px; font-variant-numeric: tabular-nums; color: #6b6780; }
+  main { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; padding: 20px; }
+  figure { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 10px; }
+  figcaption { font-weight: 600; margin: 2px 4px 8px; display: flex; justify-content: space-between; }
+  figcaption small { font-weight: 400; color: #6b6780; }
+  canvas { width: 100%; aspect-ratio: 1; display: block; border-radius: 8px; background: #fbfaff; }
+  #tilePrev { height: 38px; width: auto; aspect-ratio: auto; background: #fbfaff; border: 1px solid var(--line); border-radius: 6px; }
+  .note { padding: 0 20px 20px; color: #6b6780; max-width: 900px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pattern Brush · test paths</h1>
+  <label>Sample <select id="sample"><option value="arrow-band.svg">Arrow band</option><option value="z-interlock.svg">Z interlock</option></select></label>
+  <label class="btn" for="fSide">Upload brush artwork (SVG)</label><input type="file" id="fSide" accept=".svg,image/svg+xml" hidden>
+  <canvas id="tilePrev" width="240" height="80" aria-label="Side tile"></canvas>
+  <label>Scale <input type="range" id="scale" min=".5" max="2" step=".01" value="1"><output id="oScale">1</output></label>
+  <label>Fit <select id="fit"><option value="stretch">Stretch to fit</option><option value="space">Add space to fit</option><option value="approx">Approximate path</option></select></label>
+  <label>Spacing <input type="range" id="spacing" min="-.9" max="1" step=".01" value="0"><output id="oSpacing">0</output></label>
+  <label>Outer corner <select id="outer"><option value="centered">Auto-Centered</option><option value="between">Auto-Between</option><option value="sliced" selected>Auto-Sliced</option><option value="overlap">Auto-Overlap</option><option value="custom">Custom SVG</option></select></label>
+  <label class="btn soft" for="fOuter" id="lOuter" hidden>Outer tile…</label><input type="file" id="fOuter" accept=".svg" hidden>
+  <label>Inner corner <select id="inner"><option value="centered">Auto-Centered</option><option value="between">Auto-Between</option><option value="sliced" selected>Auto-Sliced</option><option value="overlap">Auto-Overlap</option><option value="custom">Custom SVG</option></select></label>
+  <label class="btn soft" for="fInner" id="lInner" hidden>Inner tile…</label><input type="file" id="fInner" accept=".svg" hidden>
+  <label><input type="checkbox" id="wire"> Tile outlines</label>
+</header>
+<main id="cases"></main>
+<p class="note">Every case is drawn by the app's own engine (<code>BR.patternGeometry</code> in brush.js) with the same artwork and settings.
+The side tile's top is the path's outside; outer corners turn away from the top, inner corners toward it. Grey line = the path.</p>
+
+<script src="https://cdn.jsdelivr.net/npm/p5@1.11.9/lib/p5.min.js"></script>
+<script src="shapes.js"></script>
+<script src="brush.js"></script>
+<script>
+// the six required paths, in the engine's unit space (about −1…1, y down)
+const CASES = [
+  { name: '1 · Straight horizontal line', pts: [[-.85, 0], [.85, 0]], closed: false },
+  { name: '2 · Vertical line', pts: [[0, -.85], [0, .85]], closed: false },
+  { name: '3 · L-shaped path (90°)', pts: [[-.6, -.8], [-.6, .6], [.8, .6]], closed: false },
+  { name: '4 · Rectangle (closed)', pts: [[-.8, -.6], [.8, -.6], [.8, .6], [-.8, .6]], closed: true },
+  { name: '5 · Curved path', pts: Array.from({ length: 80 }, (_, i) => { const t = i / 79; return [-.85 + 1.7 * t, .45 * Math.sin(t * Math.PI * 1.6 - .3)]; }), closed: false },
+  { name: '6 · Many sharp corners (closed cross)', pts: [[-.25, -.85], [.25, -.85], [.25, -.25], [.85, -.25], [.85, .25], [.25, .25], [.25, .85], [-.25, .85], [-.25, .25], [-.85, .25], [-.85, -.25], [-.25, -.25]], closed: true },
+];
+const $ = id => document.getElementById(id);
+const INK = '#4b2d8f';
+let tinted = null;
+
+function params() {
+  return { brush: 'custom', tipMode: 'pattern', width: .16, patternScale: +$('scale').value, patternFit: $('fit').value,
+    patternSpacing: +$('spacing').value, patternOuter: $('outer').value, patternInner: $('inner').value };
+}
+// the atlas, painted in the ink colour
+function atlasCanvas() {
+  const m = BR.maskFor(params()); if (!m) return null;
+  const src = m.canvas || m.drawingContext.canvas, c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+  const g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = INK; g.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+// textured triangle: affine map from atlas pixels to screen, clipped to the triangle
+function texTri(g, img, p, t) {
+  const [[x0, y0], [x1, y1], [x2, y2]] = p, [[u0, v0], [u1, v1], [u2, v2]] = t;
+  const d = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0); if (Math.abs(d) < 1e-9) return;
+  const a = ((x1 - x0) * (v2 - v0) - (x2 - x0) * (v1 - v0)) / d, b = ((y1 - y0) * (v2 - v0) - (y2 - y0) * (v1 - v0)) / d;
+  const c = ((x2 - x0) * (u1 - u0) - (x1 - x0) * (u2 - u0)) / d, e = ((y2 - y0) * (u1 - u0) - (y1 - y0) * (u2 - u0)) / d;
+  // grow the clip by a hair so neighbouring triangles leave no hairline seams
+  const cx = (x0 + x1 + x2) / 3, cy = (y0 + y1 + y2) / 3, grow = q => [q[0] + Math.sign(q[0] - cx) * .45, q[1] + Math.sign(q[1] - cy) * .45];
+  const [q0, q1, q2] = [grow(p[0]), grow(p[1]), grow(p[2])];
+  g.save(); g.beginPath(); g.moveTo(q0[0], q0[1]); g.lineTo(q1[0], q1[1]); g.lineTo(q2[0], q2[1]); g.closePath(); g.clip();
+  g.setTransform(a, b, c, e, x0 - a * u0 - c * v0, y0 - b * u0 - e * v0);
+  g.drawImage(img, 0, 0); g.restore();
+}
+function drawCase(cv, C, img) {
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, sc = W * .42, ox = W / 2, oy = H / 2;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, W, H);
+  const S = BR.spineFrom(C.pts, C.closed), geo = BR.patternGeometry(S, params(), [[0, 1]]);
+  const V = geo.vertices, U = geo.uvs, AW = img.width, AH = img.height;
+  const P = i => [ox + V[i].x * sc, oy + V[i].y * sc], T = i => [U[i * 2] * AW, (1 - U[i * 2 + 1]) * AH];
+  for (const f of geo.faces) texTri(g, img, f.map(P), f.map(T));
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  if ($('wire').checked) {
+    g.strokeStyle = 'rgba(230,60,90,.35)'; g.lineWidth = 1;
+    for (const f of geo.faces) { const p = f.map(P); g.beginPath(); g.moveTo(...p[0]); g.lineTo(...p[1]); g.lineTo(...p[2]); g.closePath(); g.stroke(); }
+  }
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 1.5; g.setLineDash([5, 4]); g.beginPath();
+  C.pts.forEach((p, i) => i ? g.lineTo(ox + p[0] * sc, oy + p[1] * sc) : g.moveTo(ox + p[0] * sc, oy + p[1] * sc));
+  if (C.closed) g.closePath(); g.stroke(); g.setLineDash([]);
+  return geo.faces.length;
+}
+function render() {
+  tinted = atlasCanvas(); if (!tinted) return;
+  const prev = $('tilePrev'), pg = prev.getContext('2d'), uv = BR.patternUV().side; pg.clearRect(0, 0, prev.width, prev.height);
+  const sw = (uv[1] - uv[0]) * tinted.width, k = Math.min(prev.width / sw, prev.height / tinted.height);
+  pg.drawImage(tinted, uv[0] * tinted.width, 0, sw, tinted.height, (prev.width - sw * k) / 2, (prev.height - tinted.height * k) / 2, sw * k, tinted.height * k);
+  CASES.forEach((C, i) => { const n = drawCase(C.cv, C, tinted); C.cap.textContent = n + ' triangles'; });
+  $('oScale').textContent = (+$('scale').value).toFixed(2); $('oSpacing').textContent = (+$('spacing').value).toFixed(2);
+  $('lOuter').hidden = $('outer').value !== 'custom'; $('lInner').hidden = $('inner').value !== 'custom';
+}
+const readSVG = (inp, slot) => inp.onchange = e => { const f = e.target.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = async () => { const r = await BR.loadPatternTile(slot, rd.result); if (!r.ok) alert(r.msg); render(); }; rd.readAsText(f); e.target.value = ''; };
+
+function setup() {
+  noCanvas();
+  const host = $('cases');
+  CASES.forEach(C => {
+    const fig = document.createElement('figure');
+    fig.innerHTML = `<figcaption>${C.name}<small></small></figcaption><canvas width="720" height="720"></canvas>`;
+    host.appendChild(fig); C.cv = fig.querySelector('canvas'); C.cap = fig.querySelector('small');
+  });
+  ['scale', 'fit', 'spacing', 'outer', 'inner', 'wire'].forEach(id => $(id).addEventListener('input', render));
+  readSVG($('fSide'), 'side'); readSVG($('fOuter'), 'outer'); readSVG($('fInner'), 'inner');
+  const loadSample = () => fetch('samples/pattern-brush/' + $('sample').value).then(r => r.text()).then(t => BR.loadPatternTile('side', t)).then(render);
+  $('sample').addEventListener('change', () => { if ($('sample').value === 'z-interlock.svg') $('spacing').value = -.55; loadSample(); });
+  loadSample();
+}
+</script>
+</body>
+</html>
